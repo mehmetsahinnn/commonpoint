@@ -1287,7 +1287,7 @@ const TRANSIT_Q='[out:json][timeout:60];('+
   'rel["route"~"^(subway|light_rail|tram|funicular|ferry)$"]('+BB+');'+
   'rel["route"="train"]["network"~"Marmaray|Banliy",i]('+BB+');'+
   'rel["route"="train"]["name"~"Marmaray",i]('+BB+');'+
-  'rel["route"="bus"]["name"~"Metrob",i]('+BB+');'+
+  'rel["route"="bus"]["name"~"^Metrob",i]('+BB+');'+
   'rel["route"="bus"]["network"~"Metrob",i]('+BB+');'+
   ')->.r;.r out body;('+
   'node(r.r:"stop");node(r.r:"stop_entry_only");node(r.r:"stop_exit_only");'+
@@ -1383,7 +1383,7 @@ async function reverse(lat,lng){
 /* ---------- hat verisi (Overpass) ---------- */
 const state={people:[],side:'auto',mode:'max',base:'osmfr',lines:null,graph:null,solved:null,result:null,running:false,pick:false,sheetBefore:null};
 let nextId=1,epoch=0,graphP=null;
-const TKEY='ortak-nokta-transit-v1'+(CITY.id==='istanbul'?'':'-'+CITY.id);
+const TKEY='ortak-nokta-transit-v2'+(CITY.id==='istanbul'?'':'-'+CITY.id);
 const ROUTE_MODE={subway:'metro',light_rail:'metro',tram:'tram',funicular:'funicular',ferry:'ferry',train:'rail',bus:'brt'};
 
 function parseTransit(j){
@@ -1393,6 +1393,8 @@ function parseTransit(j){
     if(e.type!=='relation') return;
     const t=e.tags||{},mode=ROUTE_MODE[t.route];
     if(!mode) return;
+    /* Otobüs ilişkisi yalnızca gerçek Metrobüs hattıysa alınır. Besleyici İETT hatları durak adında "Metrobüs" geçirir, bunlar ortalama otobüs hızıyla hesaplanır. */
+    if(t.route==='bus'&&!(/metrob/i.test(t.network||'')||/^metrob/i.test(t.name||''))) return;
     const pick=re=>{
       const out=[];
       (e.members||[]).forEach(m=>{
