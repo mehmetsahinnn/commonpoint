@@ -706,6 +706,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 
 .head h1{font:700 27px/1.1 var(--font-display);letter-spacing:-.01em;margin:0 0 6px}
 .head p{margin:0;color:var(--muted);max-width:46ch}
+.seg.city{margin-top:14px;max-width:260px}
 .sec{display:flex;flex-direction:column;gap:12px;padding-block:18px;border-top:1px solid var(--line)}
 .head{padding-bottom:18px}
 .grp{display:flex;flex-direction:column;gap:8px}
@@ -842,7 +843,11 @@ details[open]>summary{margin-bottom:8px}
   <aside class="panel" id="panel">
     <header class="head">
       <h1>Ortak Nokta</h1>
-      <p>İstanbul'da herkesin yola çıkacağı adresleri ekle. Metro, Marmaray, tramvay ve vapur hatlarında her kişiden arama yapıp herkes için adil bir buluşma koordinatı bulur.</p>
+      <p id="lead"></p>
+      <div class="seg city" id="citySeg" role="radiogroup" aria-label="Şehir">
+        <label><input type="radio" name="city" value="istanbul"><span>İstanbul</span></label>
+        <label><input type="radio" name="city" value="bursa"><span>Bursa</span></label>
+      </div>
     </header>
 
     <section class="sec">
@@ -876,7 +881,7 @@ details[open]>summary{margin-bottom:8px}
 
     <section class="sec">
       <p class="hint" id="modeHint">Ölçüt tek: hiç kimse çok uzağa gitmesin. Herkesin en uzun yolculuğu en kısa olan durak seçilir, toplam süre hesaba katılmaz.</p>
-      <div class="grp">
+      <div class="grp" id="sideGrp">
         <span class="lbl" id="lblSide">Buluşma yakası</span>
         <div class="seg" role="radiogroup" aria-labelledby="lblSide">
           <label><input type="radio" name="side" value="auto" checked><span>Otomatik</span></label>
@@ -895,7 +900,7 @@ details[open]>summary{margin-bottom:8px}
     <section id="resultSec" class="sec" hidden></section>
 
     <footer class="foot">
-      <p>Süreler toplu taşıma için tahmindir. Metro, Marmaray, tramvay, füniküler, vapur ve metrobüs hatları OpenStreetMap'ten alınır. Otobüs ve minibüs gerçek hatlarla değil ortalama hızla hesaplanır. Araç ve Avrasya Tüneli kullanılmaz, sefer saatleri ve gerçek bekleme süreleri dikkate alınmaz.</p>
+      <p id="netNote"></p>
       <details>
         <summary>Nasıl çalışır?</summary>
         <ol>
@@ -915,8 +920,8 @@ details[open]>summary{margin-bottom:8px}
   <main class="mapwrap">
     <div id="map" role="application" aria-label="Harita"></div>
     <div class="maptools">
-      <span class="it"><i class="sw eu"></i>Avrupa</span>
-      <span class="it"><i class="sw as"></i>Anadolu</span>
+      <span class="it" id="lgEu"><i class="sw eu"></i><span id="lgEuT">Avrupa</span></span>
+      <span class="it" id="lgAs"><i class="sw as"></i>Anadolu</span>
       <span class="it"><i class="sw meet"></i>Öneri</span>
       <label><input type="checkbox" id="showNet" checked>Hatlar</label>
       <label><input type="checkbox" id="showCands" checked><i class="sw cand"></i>Denenen duraklar</label>
@@ -957,7 +962,10 @@ function inPoly(lat,lng,poly){
   }
   return inside;
 }
-function sideOf(lat,lng){return inPoly(lat,lng,ASIA_POLY)?'as':'eu';}
+/* Boğaz'ı olmayan şehirlerde (Bursa gibi) yaka ayrımı kapatılır, her nokta aynı yakada sayılır. */
+let SIDES=true;
+function setSides(b){SIDES=!!b;}
+function sideOf(lat,lng){return SIDES&&inPoly(lat,lng,ASIA_POLY)?'as':'eu';}
 function hav(a,b){
   const dLat=(b.lat-a.lat)*RAD,dLng=(b.lng-a.lng)*RAD;
   const s=Math.sin(dLat/2)**2+Math.cos(a.lat*RAD)*Math.cos(b.lat*RAD)*Math.sin(dLng/2)**2;
@@ -1003,7 +1011,10 @@ function normName(s){
     .replace(/[^a-z0-9]+/g,' ').trim();
 }
 function lineLabel(ln){
-  if(ln.m==='rail') return 'Marmaray';
+  if(ln.m==='rail') return /marmaray/i.test(ln.n||'')?'Marmaray':(ln.r||ln.n||'Banliyö');
+  if(ln.m==='brt') return 'Metrobüs';
+  if(ln.r&&ln.r.length>=2) return ln.r;
+  if(ln.m!=='ferry'&&ln.n){const nm=ln.n.split(':')[0].trim();if(nm&&nm.length<=24) return nm;}
   return ln.r||MODE_INFO[ln.m].label;
 }
 
@@ -1162,10 +1173,30 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmtMin=s=>{const m=Math.round(s/60);if(m<60)return m+' dk';return Math.floor(m/60)+' sa '+String(m%60).padStart(2,'0')+' dk';};
-const inIstanbul=(la,ln)=>la>=40.75&&la<=41.62&&ln>=27.95&&ln<=30.10;
-const VIEWBOX='27.95,41.60,30.05,40.75';
+/* Şehir ayarları. Adres: #bursa veya #istanbul. Seçim tarayıcıda da saklanır.
+   bounds: [enGüney, enKuzey, enBatı, enDoğu]. viewbox: Nominatim (batı,kuzey,doğu,güney). bb: Overpass (güney,batı,kuzey,doğu). */
+const CITIES={
+  istanbul:{name:'İstanbul',bounds:[40.75,41.62,27.95,30.10],viewbox:'27.95,41.60,30.05,40.75',bb:'40.78,27.95,41.62,30.10',center:[41.03,29.0],zoom:10,sides:true,
+    lead:"İstanbul'da herkesin yola çıkacağı adresleri ekle. Metro, Marmaray, tramvay ve vapur hatlarında her kişiden arama yapıp herkes için adil bir buluşma koordinatı bulur.",
+    note:"Süreler toplu taşıma için tahmindir. Metro, Marmaray, tramvay, füniküler, vapur ve metrobüs hatları OpenStreetMap'ten alınır. Otobüs ve minibüs gerçek hatlarla değil ortalama hızla hesaplanır. Araç ve Avrasya Tüneli kullanılmaz, sefer saatleri ve gerçek bekleme süreleri dikkate alınmaz.",
+    samples:[['Bakırköy',40.9795,28.8730],['Beşiktaş',41.0430,29.0080],['Kadıköy',40.9903,29.0292],['Kartal',40.9065,29.1867]]},
+  bursa:{name:'Bursa',bounds:[40.00,40.60,28.30,29.55],viewbox:'28.30,40.60,29.55,40.00',bb:'40.00,28.30,40.60,29.55',center:[40.19,29.06],zoom:11,sides:false,
+    lead:"Bursa'da herkesin yola çıkacağı adresleri ekle. Bursaray, tramvay ve deniz hatlarında her kişiden arama yapıp herkes için adil bir buluşma koordinatı bulur.",
+    note:"Süreler toplu taşıma için tahmindir. Bursaray, tramvay ve vapur hatları OpenStreetMap'ten alınır. Bursa'da ana ulaşım otobüstür ve otobüsler gerçek hatlarla değil ortalama hızla hesaplanır. Bu yüzden Bursaray ve tramvay hattından uzak bölgelerde süreler daha kaba çıkar. Araç kullanılmaz, sefer saatleri ve gerçek bekleme süreleri dikkate alınmaz.",
+    samples:[['Görükle',40.2210,28.8480],['Heykel',40.1827,29.0630],['Yıldırım',40.1920,29.1100],['Kestel',40.1930,29.2090]]}
+};
+function pickCity(){
+  const h=(location.hash||'').replace('#','').toLowerCase();
+  if(CITIES[h]) return h;
+  try{const s=localStorage.getItem('ortak-nokta-city');if(CITIES[s]) return s;}catch(e){}
+  return 'istanbul';
+}
+const CITY=Object.assign({id:pickCity()},CITIES[pickCity()]);
+setSides(CITY.sides);
+const inCity=(la,ln)=>la>=CITY.bounds[0]&&la<=CITY.bounds[1]&&ln>=CITY.bounds[2]&&ln<=CITY.bounds[3];
+const VIEWBOX=CITY.viewbox;
 const OVERPASS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://overpass.private.coffee/api/interpreter'];
-const BB='40.78,27.95,41.62,30.10';
+const BB=CITY.bb;
 const TRANSIT_Q='[out:json][timeout:60];('+
   'rel["route"~"^(subway|light_rail|tram|funicular|ferry)$"]('+BB+');'+
   'rel["route"="train"]["network"~"Marmaray|Banliy",i]('+BB+');'+
@@ -1221,7 +1252,7 @@ async function geocode(q){
   const m=q.match(/^\s*(-?\d{1,2}\.\d+)\s*[, ]\s*(-?\d{1,3}\.\d+)\s*$/);
   if(m){
     const lat=+m[1],lng=+m[2];
-    if(!inIstanbul(lat,lng)) throw new Error('outside');
+    if(!inCity(lat,lng)) throw new Error('outside');
     return [{lat,lng,title:'Koordinat',sub:lat.toFixed(5)+', '+lng.toFixed(5)}];
   }
   const url='https://nominatim.openstreetmap.org/search?'+new URLSearchParams({q,format:'jsonv2',addressdetails:'1',limit:'6','accept-language':'tr',countrycodes:'tr',viewbox:VIEWBOX,bounded:'1'});
@@ -1240,7 +1271,7 @@ async function reverse(lat,lng){
 /* ---------- hat verisi (Overpass) ---------- */
 const state={people:[],side:'auto',mode:'max',base:'osmfr',lines:null,graph:null,solved:null,result:null,running:false};
 let nextId=1,epoch=0,graphP=null;
-const TKEY='ortak-nokta-transit-v1';
+const TKEY='ortak-nokta-transit-v1'+(CITY.id==='istanbul'?'':'-'+CITY.id);
 const ROUTE_MODE={subway:'metro',light_rail:'metro',tram:'tram',funicular:'funicular',ferry:'ferry',train:'rail',bus:'brt'};
 
 function parseTransit(j){
@@ -1255,7 +1286,7 @@ function parseTransit(j){
       (e.members||[]).forEach(m=>{
         if(m.type!=='node'||!re.test(m.role||'')) return;
         const n=nodes.get(m.ref);
-        if(!n||!inIstanbul(n.lat,n.lon)) return;
+        if(!n||!inCity(n.lat,n.lon)) return;
         out.push([Math.round(n.lat*1e5)/1e5,Math.round(n.lon*1e5)/1e5,(n.tags&&(n.tags['name:tr']||n.tags.name))||'']);
       });
       return out;
@@ -1305,7 +1336,7 @@ function ensureGraph(force){
 }
 
 /* ---------- harita ---------- */
-const map=L.map('map',{zoomControl:false,preferCanvas:true,minZoom:9}).setView([41.03,29.0],10);
+const map=L.map('map',{zoomControl:false,preferCanvas:true,minZoom:9}).setView(CITY.center,CITY.zoom);
 L.control.zoom({position:'topright',zoomInTitle:'Yakınlaştır',zoomOutTitle:'Uzaklaştır'}).addTo(map);
 map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
 /* Harita karoları: anahtar gerektirmeyen kaynaklar. Biri yüklenmezse sıradakine geçilir, hepsi başarısız olursa haritada uyarı çıkar.
@@ -1347,7 +1378,7 @@ function progress(p,text){$('#prog').hidden=false;$('#barFill').style.width=Math
 function hideProgress(){$('#prog').hidden=true;}
 function lock(b){$('#run').disabled=b;$$('input[name=side]').forEach(i=>{i.disabled=b;});}
 
-const KEY='ortak-nokta-v2';
+const KEY='ortak-nokta-v2'+(CITY.id==='istanbul'?'':'-'+CITY.id);
 function save(){
   try{localStorage.setItem(KEY,JSON.stringify({people:state.people.map(p=>({name:p.name,lat:p.lat,lng:p.lng,addr:p.addr})),side:state.side,base:state.base,show:$('#showCands').checked,net:$('#showNet').checked}));}catch(e){}
 }
@@ -1355,11 +1386,11 @@ function load(){
   try{
     let d=JSON.parse(localStorage.getItem(KEY)||'null');
     if(!d){
-      const old=JSON.parse(localStorage.getItem('ortak-nokta-v1')||'null');
+      const old=CITY.id==='istanbul'?JSON.parse(localStorage.getItem('ortak-nokta-v1')||'null'):null;
       if(old) d={people:old.people,base:old.base};
     }
     if(!d) return;
-    (d.people||[]).forEach(p=>{if(typeof p.lat==='number'&&typeof p.lng==='number'&&inIstanbul(p.lat,p.lng))state.people.push({id:nextId++,name:String(p.name||'Kişi '+nextId).slice(0,40),lat:p.lat,lng:p.lng,addr:p.addr||'',side:sideOf(p.lat,p.lng)});});
+    (d.people||[]).forEach(p=>{if(typeof p.lat==='number'&&typeof p.lng==='number'&&inCity(p.lat,p.lng))state.people.push({id:nextId++,name:String(p.name||'Kişi '+nextId).slice(0,40),lat:p.lat,lng:p.lng,addr:p.addr||'',side:sideOf(p.lat,p.lng)});});
     if(['auto','eu','as'].includes(d.side))state.side=d.side;
     if(TILE_SRC.some(s=>s.id===d.base))state.base=d.base;
     if(d.show===false)$('#showCands').checked=false;
@@ -1368,7 +1399,7 @@ function load(){
 }
 
 /* ---------- kişiler ---------- */
-function rowAddr(p){return (p.side==='as'?'Anadolu':'Avrupa')+' · '+(p.addr||(p.pending?'Adres aranıyor…':p.lat.toFixed(5)+', '+p.lng.toFixed(5)));}
+function rowAddr(p){const a=p.addr||(p.pending?'Adres aranıyor…':p.lat.toFixed(5)+', '+p.lng.toFixed(5));return CITY.sides?(p.side==='as'?'Anadolu':'Avrupa')+' · '+a:a;}
 function patchRow(p){const el=$('.person[data-id="'+p.id+'"] .paddr');if(el)el.textContent=rowAddr(p);}
 function patchTimes(){
   const r=state.result,it=r&&r.items[r.selected];
@@ -1423,7 +1454,7 @@ async function reverseFill(p){
   p.pending=false;patchRow(p);save();
 }
 function addPerson({lat,lng,addr,name}){
-  if(!inIstanbul(lat,lng)){setStatus('Bu uygulama yalnızca İstanbul içindeki noktalarla çalışır.','err');return null;}
+  if(!inCity(lat,lng)){setStatus('Bu sayfa şu an yalnızca '+CITY.name+' içindeki noktalarla çalışır.','err');return null;}
   if(state.people.some(p=>Math.abs(p.lat-lat)<1e-5&&Math.abs(p.lng-lng)<1e-5)){setStatus('Bu nokta zaten ekli.','err');return null;}
   const p={id:nextId++,name:name||('Kişi '+(state.people.length+1)),lat,lng,addr:addr||'',side:sideOf(lat,lng)};
   state.people.push(p);
@@ -1494,8 +1525,8 @@ function renderResult(){
   const coord=it.lat.toFixed(5)+', '+it.lng.toFixed(5);
   const addr=it.addr||(it.addrBusy?'Adres aranıyor…':'');
   const sub=[it.lines,addr].filter(Boolean).join(' · ');
-  const parts=[side==='as'?'Anadolu yakası':'Avrupa yakası'];
-  if(cross) parts.push(cross+' kişi karşı yakadan geliyor');
+  const parts=CITY.sides?[side==='as'?'Anadolu yakası':'Avrupa yakası']:[];
+  if(CITY.sides&&cross) parts.push(cross+' kişi karşı yakadan geliyor');
   if(who&&n>1) parts.push('en uzun süre '+who.name+' için');
   const trips=state.people.map((p,i)=>'<li><span class="tn">'+esc(p.name)+'</span><span class="tt">'+fmtMin(t[i])+'</span><span class="ts">'+esc(it.paths?it.paths[i].summary:'')+'</span></li>').join('');
   const alts=r.items.length>1?'<div><span class="lbl">Diğer seçenekler</span><ul class="alts">'+r.items.map((x,i)=>{
@@ -1618,7 +1649,7 @@ $('#addForm').addEventListener('submit',async e=>{
     else if(hits.length===1){pickHit(hits[0]);}
     else{showHits(hits);setStatus('');}
   }catch(err){
-    setStatus(err&&err.message==='outside'?'Bu koordinat İstanbul dışında.':'Adres servisine ulaşılamadı. Bağlantını kontrol edip yeniden dene.','err');
+    setStatus(err&&err.message==='outside'?'Bu koordinat '+CITY.name+' dışında.':'Adres servisine ulaşılamadı. Bağlantını kontrol edip yeniden dene.','err');
   }finally{$('#qBtn').disabled=false;}
 });
 $('#q').addEventListener('keydown',e=>{if(e.key==='Escape')hideHits();});
@@ -1640,7 +1671,7 @@ $('#bulkGo').addEventListener('click',async()=>{
   fit();
 });
 $('#sample').addEventListener('click',()=>{
-  [['Bakırköy',40.9795,28.8730],['Beşiktaş',41.0430,29.0080],['Kadıköy',40.9903,29.0292],['Kartal',40.9065,29.1867]].forEach(s=>addPerson({name:s[0],lat:s[1],lng:s[2],addr:'Örnek nokta'}));
+  CITY.samples.forEach(s=>addPerson({name:s[0],lat:s[1],lng:s[2],addr:'Örnek nokta'}));
   fit();
 });
 $('#clearAll').addEventListener('click',()=>{state.people=[];invalidate();renderPeople();drawPeople();save();setStatus('');});
@@ -1710,6 +1741,21 @@ $('#base').addEventListener('change',e=>{
 
 /* ---------- açılış ---------- */
 load();
+if(!CITY.sides) state.side='auto';
+$('#lead').textContent=CITY.lead;
+$('#netNote').textContent=CITY.note;
+$$('input[name=city]').forEach(r=>{
+  r.checked=r.value===CITY.id;
+  r.addEventListener('change',()=>{
+    if(r.value===CITY.id) return;
+    try{localStorage.setItem('ortak-nokta-city',r.value);}catch(e){}
+    location.hash=r.value;
+    location.reload();
+  });
+});
+$('#sideGrp').hidden=!CITY.sides;
+$('#lgAs').hidden=!CITY.sides;
+$('#lgEuT').textContent=CITY.sides?'Avrupa':'Kişiler';
 $$('input[name=side]').forEach(r=>{r.checked=r.value===state.side;});
 syncCursor();renderPeople();drawPeople();fit();
 useTiles(Math.max(0,TILE_SRC.findIndex(s=>s.id===state.base)));armTip();
