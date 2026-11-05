@@ -870,6 +870,8 @@ details[open]>summary::after{transform:rotate(-135deg)}
 .alt{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--surface);color:var(--ink);border:2.5px solid var(--ink);font:800 13px/1 var(--font-display);box-shadow:var(--shadow-mark)}
 .leaflet-tooltip.mt{background:var(--ink);color:var(--surface);border:0;font-weight:800;font-size:13px;padding:5px 9px;box-shadow:var(--shadow-mark)}
 .leaflet-tooltip-bottom.mt:before{border-bottom-color:var(--ink)}
+.ltag-wrap{pointer-events:none}
+.ltag{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;padding:2px 8px;border:2px solid var(--ink);border-radius:99px;background:var(--surface);color:var(--ink);font:800 12px/1.3 var(--font-display);box-shadow:var(--shadow-mark)}
 .leaflet-tile-pane{filter:saturate(.55) contrast(.95)}
 @media (prefers-color-scheme: dark){
   .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.85) saturate(.5)}
@@ -982,7 +984,7 @@ details[open]>summary::after{transform:rotate(-135deg)}
         <div class="grp">
           <span class="lbl">Hat verisi</span>
           <p class="hint" id="netInfo">Henüz indirilmedi.</p>
-          <button class="btn sm" id="netReload" type="button">Yeniden indir</button>
+          <button class="btn sm" id="netReload" type="button">Raylı hatları canlı güncelle</button>
         </div>
       </div>
     </details>
@@ -1021,6 +1023,7 @@ details[open]>summary::after{transform:rotate(-135deg)}
   <button class="btn sm" id="tileRetry" type="button">Yeniden dene</button>
 </div>
 
+<script id="ortak-data" type="application/json">{}</script>
 <script>
 /* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
@@ -1074,7 +1077,8 @@ const MODE_INFO={
   funicular:{v:3.5,wait:180,label:'Füniküler'},
   rail:{v:12.5,wait:420,label:'Marmaray'},
   ferry:{v:6.5,wait:900,label:'Vapur'},
-  brt:{v:10.5,wait:180,label:'Metrobüs'}
+  brt:{v:10.5,wait:180,label:'Metrobüs'},
+  bus:{v:7,wait:420,label:'Otobüs'}
 };
 const walkT=d=>d*WALK_DETOUR/WALK_V;
 const busT=d=>BUS_WAIT+d*BUS_DETOUR/BUS_V;
@@ -1090,6 +1094,19 @@ function accessInfo(a,b){
   const bt=busT(d);
   if(d<=WALK_MAX) return w<=bt?{t:w,mode:'walk'}:{t:bt,mode:'bus'};
   return {t:bt,mode:'bus'};
+}
+/* Gerçek otobüs ağı varken kişi yalnızca yürüyerek bir durağa gider (en çok WALK_REAL). Yakında durak yoksa eski genel otobüs varsayımı kullanılır. */
+const WALK_REAL=1500;
+function makeAccess(G,person){
+  if(!G.realBus) return h=>accessInfo(person,h);
+  let near=false;
+  for(const h of G.hubs){if(h.side===person.side&&hav(person,h)<=WALK_REAL){near=true;break;}}
+  if(!near) return h=>accessInfo(person,h);
+  return h=>{
+    if(h.side!==person.side) return null;
+    const d=hav(person,h);
+    return d<=WALK_REAL?{t:walkT(d),mode:'walk'}:null;
+  };
 }
 function normName(s){
   return String(s||'').toLowerCase().replace(/ı/g,'i').normalize('NFD').replace(/[̀-ͯ]/g,'')
@@ -1108,19 +1125,28 @@ function lineLabel(ln){
    sonrası hat peronları. Binişte bekleme süresi, hat boyunca yolculuk süresi kenar ağırlığıdır. */
 function buildGraph(lines){
   const stops=[],start=[];
-  lines.forEach((ln,li)=>{start.push(stops.length);ln.s.forEach(s=>stops.push({li,lat:s[0],lng:s[1],name:s[2]||''}));});
+  lines.forEach((ln,li)=>{start.push(stops.length);const bus=ln.m==='bus';ln.s.forEach(s=>stops.push({li,bus,lat:s[0],lng:s[1],name:s[2]||''}));});
   const n=stops.length,par=new Int32Array(n);
   for(let i=0;i<n;i++)par[i]=i;
   const find=x=>{while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;};
-  const cells=new Map(),CS=0.008,nn=stops.map(s=>normName(s.name));
+  const cells=new Map(),CS=0.008,nn=stops.map(s=>normName(s.name)),coordFirst=new Map();
   stops.forEach((s,i)=>{
+    /* Aynı düğüm birden çok hatta geçer: aynı koordinattaki duraklar doğrudan birleşir */
+    const ck=s.lat+','+s.lng,f0=coordFirst.get(ck);
+    if(f0!==undefined){const a=find(i),b=find(f0);if(a!==b)par[a]=b;return;}
+    coordFirst.set(ck,i);
     const cx=Math.floor(s.lat/CS),cy=Math.floor(s.lng/CS);
     for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
       const arr=cells.get((cx+dx)+','+(cy+dy));
       if(!arr) continue;
       for(const j of arr){
-        const d=hav(s,stops[j]);
-        if(d<=280||(d<=600&&nn[i]&&nn[i]===nn[j])){const a=find(i),b=find(j);if(a!==b)par[a]=b;}
+        const t=stops[j];
+        if(Math.abs(s.lat-t.lat)>0.0056||Math.abs(s.lng-t.lng)>0.0076) continue;
+        const d=hav(s,t);
+        /* Otobüs durakları sık dizilir: birbirine zincirleme bağlanıp dev kümeler olmasın diye otobüs-otobüs için dar yarıçap */
+        const bb=s.bus&&t.bus,bm=s.bus!==t.bus;
+        const near=bb?100:bm?220:280,nearName=bb?250:bm?500:600;
+        if(d<=near||(d<=nearName&&nn[i]&&nn[i]===nn[j])){const a=find(i),b=find(j);if(a!==b)par[a]=b;}
       }
     }
     const k=cx+','+cy;let a=cells.get(k);if(!a){a=[];cells.set(k,a);}a.push(i);
@@ -1142,7 +1168,8 @@ function buildGraph(lines){
   const adj=hubs.map(()=>[]),nodeHub=hubs.map((_,i)=>i),metas=[],metaIdx=new Map(),platMap=new Map(),rideW=new Map();
   const metaOf=ln=>{
     let i=metaIdx.get(ln.k);
-    if(i==null){i=metas.length;metaIdx.set(ln.k,i);metas.push({m:ln.m,n:ln.n,r:ln.r,label:lineLabel(ln)});}
+    if(i==null){i=metas.length;metaIdx.set(ln.k,i);metas.push({m:ln.m,n:ln.n,r:ln.r,label:lineLabel(ln),ids:[]});}
+    if(ln.id!=null&&!metas[i].ids.includes(ln.id)) metas[i].ids.push(ln.id);
     return i;
   };
   const plat=(mi,h)=>{
@@ -1169,7 +1196,7 @@ function buildGraph(lines){
     }
   });
   rideW.forEach(e=>adj[e.u].push({to:e.v,w:e.w,t:2,ln:e.mi}));
-  return {hubs,N,adj,nodeHub,metas,lines};
+  return {hubs,N,adj,nodeHub,metas,lines,realBus:lines.some(l=>l.m==='bus')};
 }
 
 class Heap{
@@ -1198,7 +1225,8 @@ class Heap{
 function dijkstra(G,person){
   const N=G.N,dist=new Float64Array(N).fill(Infinity),prev=new Int32Array(N).fill(-1),via=new Array(N).fill(null);
   const heap=new Heap();
-  G.hubs.forEach((h,i)=>{const a=accessInfo(person,h);dist[i]=a.t;heap.push(a.t,i);});
+  const acc=makeAccess(G,person);
+  G.hubs.forEach((h,i)=>{const a=acc(h);if(!a)return;dist[i]=a.t;heap.push(a.t,i);});
   while(heap.size){
     const top=heap.pop(),d=top[0],u=top[1];
     if(d>dist[u]) continue;
@@ -1207,14 +1235,14 @@ function dijkstra(G,person){
       if(nd<dist[e.to]){dist[e.to]=nd;prev[e.to]=u;via[e.to]=e;heap.push(nd,e.to);}
     }
   }
-  return {dist,prev,via};
+  return {dist,prev,via,acc};
 }
 /* Bir durağa giden en kısa yolun parçaları: önce erişim (yürüyüş ya da otobüs), sonra hat yolculukları */
 function legsFor(G,res,h,person){
   const nodes=[];
   for(let u=h;u!==-1;u=res.prev[u])nodes.push(u);
   nodes.reverse();
-  const first=nodes[0],ai=accessInfo(person,G.hubs[first]);
+  const first=nodes[0],ai=(res.acc||(h=>accessInfo(person,h)))(G.hubs[first]);
   const legs=[{kind:'access',mode:ai.mode,t:ai.t,to:first,dist:hav(person,G.hubs[first])}];
   let cur=null,pend=0;
   for(let k=1;k<nodes.length;k++){
@@ -1383,18 +1411,25 @@ async function reverse(lat,lng){
 /* ---------- hat verisi (Overpass) ---------- */
 const state={people:[],side:'auto',mode:'max',base:'osmfr',lines:null,graph:null,solved:null,result:null,running:false,pick:false,sheetBefore:null};
 let nextId=1,epoch=0,graphP=null;
-const TKEY='ortak-nokta-transit-v2'+(CITY.id==='istanbul'?'':'-'+CITY.id);
+const TKEY='ortak-nokta-transit-v3'+(CITY.id==='istanbul'?'':'-'+CITY.id);
 const ROUTE_MODE={subway:'metro',light_rail:'metro',tram:'tram',funicular:'funicular',ferry:'ferry',train:'rail',bus:'brt'};
 
-function parseTransit(j){
+function isMetrobus(t){return /metrob/i.test(t.network||'')||/^metrob/i.test(t.name||'');}
+/* allowBus: gömülü veriyi üreten betik tüm otobüs hatlarını alır. Canlı sorguda yalnızca gerçek Metrobüs hattı alınır. */
+function parseTransit(j,allowBus){
   const nodes=new Map(),lines=[];
   (j.elements||[]).forEach(e=>{if(e.type==='node')nodes.set(e.id,e);});
   (j.elements||[]).forEach(e=>{
     if(e.type!=='relation') return;
-    const t=e.tags||{},mode=ROUTE_MODE[t.route];
+    const t=e.tags||{};
+    let mode=ROUTE_MODE[t.route];
     if(!mode) return;
-    /* Otobüs ilişkisi yalnızca gerçek Metrobüs hattıysa alınır. Besleyici İETT hatları durak adında "Metrobüs" geçirir, bunlar ortalama otobüs hızıyla hesaplanır. */
-    if(t.route==='bus'&&!(/metrob/i.test(t.network||'')||/^metrob/i.test(t.name||''))) return;
+    /* Besleyici İETT hatları durak adında "Metrobüs" geçirir ama Metrobüs değildir. */
+    if(t.route==='bus'){
+      if(isMetrobus(t)) mode='brt';
+      else if(allowBus) mode='bus';
+      else return;
+    }
     const pick=re=>{
       const out=[];
       (e.members||[]).forEach(m=>{
@@ -1408,15 +1443,37 @@ function parseTransit(j){
     let s=pick(/^stop/);
     if(s.length<2) s=pick(/^platform/);
     if(s.length<2) return;
-    lines.push({k:mode+':'+(t.ref||t.name||e.id),m:mode,n:t.name||'',r:t.ref||'',s});
+    lines.push({k:mode+':'+(t.ref||t.name||e.id),id:e.id,m:mode,n:t.name||'',r:t.ref||'',s});
   });
   return lines;
 }
+/* Gömülü veri: HTML içindeki ortak-data bloğu. Çizgiler art arda farklarla kodlanır (enlem, boylam 1e5 ile, ad sırası). */
+const EMBED=(()=>{try{const e=document.getElementById('ortak-data');return (e&&JSON.parse(e.textContent||'{}'))||{};}catch(x){return {};}})();
+function decodeLines(d){
+  const names=d.names||[],out=[];
+  (d.lines||[]).forEach(l=>{
+    const f=l.s||[],s=[];let la=0,ln=0;
+    for(let i=0;i+2<f.length;i+=3){la+=f[i];ln+=f[i+1];const ni=f[i+2];s.push([la/1e5,ln/1e5,ni>=0?(names[ni]||''):'']);}
+    if(s.length<2) return;
+    out.push({k:l.m+':'+(l.r||l.n||l.id),id:l.id,m:l.m,n:l.n||'',r:l.r||'',s});
+  });
+  return out;
+}
+function embeddedLines(){
+  const d=EMBED[CITY.id];
+  if(!d||!Array.isArray(d.lines)) return null;
+  try{const lines=decodeLines(d);return lines.length?{lines,t:d.t||''}:null;}catch(e){return null;}
+}
 async function loadLines(force){
+  const emb=embeddedLines();
+  state.snapshot='';
+  if(!force&&emb){state.snapshot=emb.t||'canlı';return emb.lines;}
+  /* Canlı veri raylı hatları yeniler, otobüs hatları gömülü veriden kalır */
+  const withBus=ls=>emb?ls.concat(emb.lines.filter(l=>l.m==='bus')):ls;
   if(!force){
     try{
       const c=JSON.parse(localStorage.getItem(TKEY)||'null');
-      if(c&&Array.isArray(c.lines)&&c.lines.length&&Date.now()-c.t<7*864e5) return c.lines;
+      if(c&&Array.isArray(c.lines)&&c.lines.length&&Date.now()-c.t<7*864e5) return withBus(c.lines);
     }catch(e){}
   }
   let j=null,err=null;
@@ -1430,17 +1487,26 @@ async function loadLines(force){
   const lines=parseTransit(j);
   if(!lines.length) throw new Error('no-transit');
   try{localStorage.setItem(TKEY,JSON.stringify({t:Date.now(),lines}));}catch(e){}
-  return lines;
+  return withBus(lines);
+}
+function snapText(){
+  const t=state.snapshot;
+  if(t&&/^\d{4}-\d\d-\d\d$/.test(t)){
+    let d=t;try{d=new Date(t+'T12:00:00').toLocaleDateString('tr-TR',{day:'numeric',month:'long',year:'numeric'});}catch(e){}
+    return d+' tarihli OpenStreetMap verisi uygulamaya gömülüdür.';
+  }
+  return 'Veri OpenStreetMap kaynaklıdır.';
 }
 function setNet(t){$('#netInfo').textContent=t;}
 function ensureGraph(force){
   if(graphP&&!force) return graphP;
   const p=(async()=>{
-    setNet('Hat verisi indiriliyor…');
+    setNet(embeddedLines()&&!force?'Hat verisi hazırlanıyor…':'Hat verisi indiriliyor…');
     const lines=await loadLines(force);
     state.lines=lines;
     state.graph=buildGraph(lines);
-    setNet(state.graph.hubs.length+' durak noktası, '+state.graph.metas.length+' hat. Veri OpenStreetMap kaynaklıdır.');
+    refreshNote();
+    setNet(state.graph.hubs.length+' durak noktası, '+state.graph.metas.length+' hat. '+snapText());
     drawNetwork();
     return state.graph;
   })();
@@ -1599,7 +1665,7 @@ function barHTML(legs,maxT){
   const total=legs.reduce((s,l)=>s+l.t,0);
   const segs=legs.map(l=>{
     const kind=l.kind==='access'?l.mode:'ride';
-    const label=kind==='walk'?'Yürüyüş':kind==='bus'?'Otobüs':l.label;
+    const label=kind==='walk'?'Yürüyüş':kind==='bus'?'Otobüs':(l.mode==='bus'?'Otobüs '+l.label:l.label);
     const wide=l.t/maxT>=.17;
     return '<span class="js '+kind+'" style="flex:'+l.t.toFixed(1)+' 1 0" title="'+esc(label+' '+fmtMin(l.t))+'">'+(wide?'<i>'+esc(label)+'</i>':'')+'</span>';
   }).join('');
@@ -1697,6 +1763,7 @@ function drawNetwork(){
   if(!state.lines||!$('#showNet').checked) return;
   const col=cssVar('--net');
   state.lines.forEach(ln=>{
+    if(ln.m==='bus') return;
     const ferry=ln.m==='ferry';
     L.polyline(ln.s.map(s=>[s[0],s[1]]),{renderer:canvasR,color:col,weight:ferry?1.5:2,opacity:.75,dashArray:ferry?'4 5':null,interactive:false}).addTo(netLayer);
   });
@@ -1729,7 +1796,7 @@ function summarize(G,legs){
   const first=legs[0];
   const hn=h=>G.hubs[h].name||'Durak';
   const parts=[(first.mode==='walk'?'Yürüyüş ':'Otobüs ')+fmtMin(first.t),hn(first.to)];
-  legs.slice(1).forEach(l=>{parts.push(l.label);parts.push(hn(l.to));});
+  legs.slice(1).forEach(l=>{parts.push(l.mode==='bus'?'Otobüs '+l.label:l.label);parts.push(hn(l.to));});
   return parts.join(' → ');
 }
 const fmtFrom=s=>{const m=Math.round(s/60);if(m<60)return m+' dakikadan';const h=Math.floor(m/60),r=m%60;return r?h+' saat '+r+' dakikadan':h+' saatten';};
@@ -1776,26 +1843,159 @@ function drawIn(layer,delay){
     setTimeout(()=>{el.style.strokeDasharray='';el.style.transition='';el.style.strokeDashoffset='';},delay+1000);
   }catch(e){}
 }
-function showPaths(it){
+/* ---------- hat geometrisi, etiketler, otobüs yol çizimi ----------
+   Süre hesabı bunlardan etkilenmez. Hepsi yalnızca çizim içindir, alınamazsa düz çizgiye dönülür. */
+const geomCache=new Map(),roadCache=new Map();
+let routeTok=0,geomRetryAt=0;
+const dm=(a,b)=>hav({lat:a[0],lng:a[1]},{lat:b[0],lng:b[1]});
+const KX=0.76; /* enlem 41° civarında boylam derecesinin enlem derecesine oranı */
+/* Bir hat ilişkisinin yollarını sırayla uç uca ekleyip tek çizgi yapar. Kopukluklar gaps içinde tutulur. */
+function chainWays(rel){
+  const ways=(rel.members||[]).filter(m=>m.type==='way'&&Array.isArray(m.geometry)&&m.geometry.length>1&&!/^(stop|platform)/.test(m.role||''))
+    .map(m=>m.geometry.map(g=>[g.lat,g.lon]));
+  if(!ways.length) return null;
+  const P=ways[0].slice(),gaps=[];
+  if(ways.length>1){
+    const n=ways[1],e=pt=>Math.min(dm(pt,n[0]),dm(pt,n[n.length-1]));
+    if(e(P[0])<e(P[P.length-1])) P.reverse();
+  }
+  for(let k=1;k<ways.length;k++){
+    const w=ways[k],t=P[P.length-1],d0=dm(t,w[0]),d1=dm(t,w[w.length-1]);
+    const fwd=d0<=d1,w2=fwd?w:w.slice().reverse(),d=fwd?d0:d1;
+    if(d>25) gaps.push([P.length,d]);
+    for(let i=d<=25?1:0;i<w2.length;i++) P.push(w2[i]);
+  }
+  return P.length>1?{P,gaps}:null;
+}
+async function loadGeoms(ids){
+  const q='[out:json][timeout:50];rel(id:'+ids.join(',')+');out geom;';
+  let j=null;
+  for(const ep of OVERPASS){
+    try{
+      j=await getJSON(ep,{retries:0,timeout:50000,init:{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)}});
+      if(j&&Array.isArray(j.elements)) break;
+      j=null;
+    }catch(e){j=null;}
+  }
+  if(!j){geomRetryAt=Date.now()+60000;return;}
+  ids.forEach(id=>geomCache.set(id,null));
+  j.elements.forEach(e=>{if(e.type==='relation')geomCache.set(e.id,chainWays(e));});
+}
+/* Çizgi üzerinde q noktasına en yakın nokta: segment sırası, segment içi oran, uzaklık (m) */
+function snapTo(P,q){
+  let bi=0,bt=0,bd=Infinity;
+  const px=q[0],py=q[1]*KX;
+  for(let i=0;i+1<P.length;i++){
+    const ax=P[i][0],ay=P[i][1]*KX,vx=P[i+1][0]-ax,vy=P[i+1][1]*KX-ay,L2=vx*vx+vy*vy;
+    let t=L2?((px-ax)*vx+(py-ay)*vy)/L2:0;t=t<0?0:t>1?1:t;
+    const dx=ax+t*vx-px,dy=ay+t*vy-py,d=dx*dx+dy*dy;
+    if(d<bd){bd=d;bi=i;bt=t;}
+  }
+  return {i:bi,t:bt,pos:bi+bt,d:Math.sqrt(bd)*111000};
+}
+/* Yolculuğun duraklarını (sırayla) hat çizgisine oturtur ve aradaki parçayı keser. Uymazsa null döner. */
+function sliceOne(g,pts){
+  const P=g.P,sn=[];let err=0;
+  for(const q of pts){const s=snapTo(P,q);if(s.d>450) return null;sn.push(s);err+=s.d;}
+  const a=sn[0],b=sn[sn.length-1];
+  if(Math.abs(b.pos-a.pos)<1e-6) return null;
+  const inc=b.pos>a.pos;
+  for(let k=1;k<sn.length;k++) if(inc?sn[k].pos<sn[k-1].pos-1e-9:sn[k].pos>sn[k-1].pos+1e-9) return null;
+  const lo=inc?a:b,hi=inc?b:a;
+  for(const [gi,gd] of g.gaps) if(gd>600&&gi-1>=lo.i&&gi-1<=hi.i) return null;
+  const at=s=>[P[s.i][0]+s.t*(P[s.i+1][0]-P[s.i][0]),P[s.i][1]+s.t*(P[s.i+1][1]-P[s.i][1])];
+  const mid=P.slice(lo.i+1,hi.i+1);
+  let ll=[at(lo)].concat(mid,[at(hi)]);
+  if(!inc) ll=ll.reverse();
+  return {ll,err};
+}
+function legGeometry(G,l){
+  const pts=l.path.map(h=>[G.hubs[h].lat,G.hubs[h].lng]);
+  let best=null;
+  for(const id of (G.metas[l.ln].ids||[])){
+    const g=geomCache.get(id);if(!g) continue;
+    const r=sliceOne(g,pts);
+    if(r&&(!best||r.err<best.err)) best=r;
+  }
+  return best?best.ll:null;
+}
+const roadKey=(a,b)=>a[0].toFixed(5)+','+a[1].toFixed(5)+'>'+b[0].toFixed(5)+','+b[1].toFixed(5);
+const lineLen=ll=>{let t=0;for(let i=0;i+1<ll.length;i++)t+=dm(ll[i],ll[i+1]);return t;};
+/* Otobüs erişim bacağı için yol üzerinden tahmini güzergâh. Yalnızca çizim, süre bundan hesaplanmaz. */
+async function fetchRoad(a,b){
+  const k=roadKey(a,b);
+  if(roadCache.has(k)) return;
+  roadCache.set(k,null);
+  try{
+    const j=await getJSON('https://router.project-osrm.org/route/v1/driving/'+a[1].toFixed(5)+','+a[0].toFixed(5)+';'+b[1].toFixed(5)+','+b[0].toFixed(5)+'?overview=full&geometries=geojson',{retries:0,timeout:9000});
+    const c=j&&j.routes&&j.routes[0]&&j.routes[0].geometry&&j.routes[0].geometry.coordinates;
+    if(!c||c.length<2) return;
+    const ll=c.map(x=>[x[1],x[0]]);
+    if(lineLen(ll)<=Math.max(3.2*dm(a,b),300)) roadCache.set(k,ll);
+  }catch(e){}
+}
+function midOf(ll){
+  const seg=[];let tot=0;
+  for(let i=0;i+1<ll.length;i++){const d=dm(ll[i],ll[i+1]);seg.push(d);tot+=d;}
+  let h=tot/2;
+  for(let i=0;i<seg.length;i++){
+    if(h<=seg[i]){const t=seg[i]?h/seg[i]:0;return [ll[i][0]+(ll[i+1][0]-ll[i][0])*t,ll[i][1]+(ll[i+1][1]-ll[i][1])*t];}
+    h-=seg[i];
+  }
+  return ll[Math.floor(ll.length/2)];
+}
+function showPaths(it,still){
   routeLayer.clearLayers();
-  const G=state.solved.G,surf=cssVar('--surface');
+  const G=state.solved.G,surf=cssVar('--surface'),tags=[];
+  const tag=(pt,text,col)=>{
+    if(!text||!pt||tags.some(t=>t.text===text&&dm(t.p,pt)<700)) return;
+    tags.push({p:pt,text});
+    L.marker(pt,{icon:L.divIcon({className:'ltag-wrap',html:'<span class="ltag" aria-hidden="true" style="border-color:'+col+'">'+esc(text)+'</span>',iconSize:[0,0]}),interactive:false,keyboard:false,zIndexOffset:400}).addTo(routeLayer);
+  };
   state.people.forEach((p,i)=>{
     const col=sideColor(p.side);
     it.paths[i].legs.forEach(l=>{
       if(l.kind==='access'){
         const h=G.hubs[l.to];
-        const ll=[[p.lat,p.lng],[h.lat,h.lng]];
-        L.polyline(ll,{renderer:svgR,color:surf,weight:7,opacity:.7,lineCap:'round',interactive:false}).addTo(routeLayer);
-        L.polyline(ll,{renderer:svgR,color:col,weight:3.5,opacity:.95,dashArray:'1 7',lineCap:'round',interactive:false}).addTo(routeLayer);
+        const road=l.mode==='bus'&&p.side===h.side?roadCache.get(roadKey([p.lat,p.lng],[h.lat,h.lng])):null;
+        const ll=road||[[p.lat,p.lng],[h.lat,h.lng]];
+        L.polyline(ll,{renderer:svgR,color:surf,weight:7,opacity:.7,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
+        L.polyline(ll,{renderer:svgR,color:col,weight:3.5,opacity:.95,dashArray:'1 7',lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
+        if(l.mode==='bus') tag(midOf(ll),'Otobüs (tahmini)',col);
       }else{
-        const ll=l.path.map(h=>[G.hubs[h].lat,G.hubs[h].lng]);
+        const ll=legGeometry(G,l)||l.path.map(h=>[G.hubs[h].lat,G.hubs[h].lng]);
         L.polyline(ll,{renderer:svgR,color:surf,weight:10,opacity:.75,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
         const pl=L.polyline(ll,{renderer:svgR,color:col,weight:6,opacity:.95,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
-        drawIn(pl,i*140);
+        if(!still) drawIn(pl,i*140);
         [l.from,l.to].forEach(h=>L.circleMarker([G.hubs[h].lat,G.hubs[h].lng],{renderer:svgR,radius:4.5,color:col,weight:2.5,fillColor:surf,fillOpacity:1,interactive:false}).addTo(routeLayer));
+        tag(midOf(ll),l.mode==='bus'?'Otobüs '+l.label:l.label,col);
       }
     });
   });
+}
+/* Gerçek hat geometrisini ve otobüs yol çizimlerini arka planda alır, gelince çizimi yeniler. */
+async function refineRoutes(it){
+  const G=state.solved&&state.solved.G;
+  if(!G||!it.paths) return;
+  const tok=++routeTok,ids=new Set(),roads=[];
+  state.people.forEach((p,i)=>it.paths[i].legs.forEach(l=>{
+    if(l.kind==='ride'){(G.metas[l.ln].ids||[]).forEach(id=>{if(!geomCache.has(id))ids.add(id);});}
+    else if(l.mode==='bus'){
+      const h=G.hubs[l.to];
+      if(p.side===h.side){const a=[p.lat,p.lng],b=[h.lat,h.lng];if(!roadCache.has(roadKey(a,b)))roads.push([a,b]);}
+    }
+  }));
+  const jobs=[];
+  if(ids.size&&Date.now()>=geomRetryAt) jobs.push(loadGeoms([...ids]));
+  if(roads.length){
+    const q=roads.slice(),worker=async()=>{while(q.length){const r=q.shift();await fetchRoad(r[0],r[1]);}};
+    for(let n=0;n<Math.min(4,roads.length);n++) jobs.push(worker());
+  }
+  if(!jobs.length) return;
+  await Promise.all(jobs);
+  const r=state.result;
+  if(tok!==routeTok||!r||r.items[r.selected]!==it) return;
+  showPaths(it,true);
 }
 function selectItem(i){
   const r=state.result,s=state.solved;
@@ -1811,6 +2011,7 @@ function selectItem(i){
   drawResultMarkers();renderResult();patchTrips();showPaths(it);
   refit();
   ensureAddr(it);
+  refineRoutes(it).catch(()=>{});
 }
 function present(){
   const s=state.solved,mode=state.mode;
@@ -2010,7 +2211,13 @@ $('#base').addEventListener('change',e=>{
 load();
 if(!CITY.sides) state.side='auto';
 $('#lead').textContent=CITY.lead;
-$('#netNote').textContent=CITY.note;
+function refreshNote(){
+  const real=!!(state.graph&&state.graph.realBus);
+  $('#netNote').textContent=real
+    ?"Süreler toplu taşıma için tahmindir. Metro, Marmaray, tramvay, füniküler, vapur, metrobüs ve otobüs hatları OpenStreetMap'teki hat ve durak sıralarından alınır. Otobüs yaklaşık 15 km/s ortalama hız ve 7 dakika bekleme ile hesaplanır. Sefer saatleri, trafik ve gerçek bekleme süreleri dikkate alınmaz. Araç ve Avrasya Tüneli kullanılmaz. Haritadaki hat çizgileri OpenStreetMap geometrisini izler."
+    :CITY.note+' Haritadaki hat çizgileri OpenStreetMap geometrisini izler. Otobüs güzergâhı gerçek bir hat değildir: yol üzerinden çizilmiş bir tahmindir ve süre hesabını etkilemez.';
+}
+refreshNote();
 $$('input[name=city]').forEach(r=>{
   r.checked=r.value===CITY.id;
   r.addEventListener('change',()=>{

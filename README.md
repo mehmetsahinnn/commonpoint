@@ -24,3 +24,20 @@ Arayüz renk teorisi ve UX yasalarına göre yeniden tasarlandı.
 - Metin kontrastı WCAG 4.5:1, işaretler 3:1 üzerindedir. Açık ve koyu tema ayrı seçilmiş değerlerdir, sistem temasını izler.
 - Her yolculuk satırında süre çubuğu vardır, en uzun yolculuk işaretlidir. Renk dışında etiket, desen ve sayı da kullanılır.
 - Seçenekler ve açıklama varsayılan olarak kapalıdır. Adres kutusu adres, koordinat ve Google Haritalar bağlantısını kabul eder.
+
+## Hat verisi
+
+Uygulama hat verisini gömülü taşır: `index.html` içindeki `<script id="ortak-data">` bloğu. Açılışta hiçbir şey indirilmez. Gömülü veri yoksa uygulama raylı hatları canlı Overpass'tan indirir ve otobüsü ortalama hızla hesaplar.
+
+Veriyi yenilemek için (Node 18 veya üstü, ek paket gerekmez):
+
+```
+node tools/build-data.mjs
+```
+
+- OpenStreetMap'ten metro, Marmaray, tramvay, füniküler, vapur, Metrobüs ve İstanbul için tüm otobüs hatlarını indirir. İstanbul'da yaklaşık 1700 otobüs hattı olduğu için birkaç dakika sürebilir.
+- `data/istanbul.json` ve `data/bursa.json` dosyalarını yazar ve `index.html` içine gömer. Sonra commit edip pushlaman yeterli.
+- Bursa'da OpenStreetMap'te yalnızca 17 otobüs hattı var, eksik ağ sonucu bozacağı için otobüs alınmaz. Orada otobüs ortalama hızla hesaplanır.
+- Seçenekler: `--city istanbul`, `--embed-only` (indirme yok, `data/` dosyalarını gömer), `--html <dosya>`.
+
+Gerçek otobüs ağı varken kişi yalnızca yürüyerek (en çok 1,5 km) bir durağa gider. Otobüs yaklaşık 15 km/s ortalama hız ve 7 dakika bekleme ile hesaplanır. Yakında hiç durak yoksa eski ortalama hızlı otobüs varsayımı yedek olarak kullanılır.
