@@ -38,6 +38,7 @@ node tools/build-data.mjs
 - OpenStreetMap'ten metro, Marmaray, tramvay, füniküler, vapur, Metrobüs ve İstanbul için tüm otobüs hatlarını indirir. İstanbul'da yaklaşık 1700 otobüs hattı olduğu için birkaç dakika sürebilir.
 - `data/istanbul.json` ve `data/bursa.json` dosyalarını yazar ve `index.html` içine gömer. Sonra commit edip pushlaman yeterli.
 - Bursa'da OpenStreetMap'te yalnızca 17 otobüs hattı var, eksik ağ sonucu bozacağı için otobüs alınmaz. Orada otobüs ortalama hızla hesaplanır.
+- Overpass kimliksiz istekleri reddeder (HTTP 406), betik bu yüzden `ortak-nokta-data/1.0` User-Agent'ı gönderir. Başka bir ad vermek için `OVERPASS_UA="adın (iletişim)" node tools/build-data.mjs`. HTTP 429 sunucunun yoğun olduğu anlamına gelir, betik bekleyip yeniden dener.
 - Seçenekler: `--city istanbul`, `--embed-only` (indirme yok, `data/` dosyalarını gömer), `--html <dosya>`.
 
 Gerçek otobüs ağı varken kişi yalnızca yürüyerek (en çok 1,5 km) bir durağa gider. Otobüs yaklaşık 15 km/s ortalama hız ve 7 dakika bekleme ile hesaplanır. Yakında hiç durak yoksa eski ortalama hızlı otobüs varsayımı yedek olarak kullanılır.

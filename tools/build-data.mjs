@@ -31,6 +31,9 @@ const ENDPOINTS = [
 const ROUTE_MODE = { subway: 'metro', light_rail: 'metro', tram: 'tram', funicular: 'funicular', ferry: 'ferry', train: 'rail', bus: 'bus' };
 const MARK = /<script id="ortak-data" type="application\/json">[\s\S]*?<\/script>/;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/* Overpass genel ya da kimliksiz User-Agent'ları 406 ile reddeder. Betiği tanıtan benzersiz bir User-Agent gönderilir.
+   Gerekirse OVERPASS_UA ortam değişkeniyle değiştirilebilir. */
+const UA = process.env.OVERPASS_UA || 'ortak-nokta-data/1.0 (+https://github.com/mehmetsahinnn/commonpoint)';
 const log = (...a) => console.log(...a);
 
 /* ---------- Overpass ---------- */
@@ -59,20 +62,26 @@ async function overpass(query, tries = 6) {
     try {
       const res = await fetch(ep, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', 'User-Agent': UA },
         body: 'data=' + encodeURIComponent(query),
         signal: ctl.signal,
       });
       clearTimeout(timer);
-      if (res.status === 429 || res.status >= 500) throw new Error('http ' + res.status);
-      if (!res.ok) throw new Error('http ' + res.status);
+      if (!res.ok) {
+        let snip = '';
+        try { snip = (await res.text()).replace(/\s+/g, ' ').slice(0, 120); } catch (e) { /* yok say */ }
+        const err = new Error('http ' + res.status + (snip ? ' – ' + snip : ''));
+        err.status = res.status;
+        err.retryAfter = Number(res.headers.get('retry-after')) || 0;
+        throw err;
+      }
       const j = await res.json();
       if (j.remark && /error|timed out/i.test(j.remark) && !(j.elements && j.elements.length)) throw new Error(j.remark);
       return j;
     } catch (e) {
       clearTimeout(timer);
       lastErr = e;
-      const wait = Math.min(30000, 4000 * (a + 1));
+      const wait = Math.min(60000, Math.max(e.retryAfter ? e.retryAfter * 1000 : 0, (e.status === 429 ? 15000 : 4000) * (a + 1)));
       log(`  uyarı: ${new URL(ep).host} yanıt vermedi (${e.message}), ${Math.round(wait / 1000)} sn sonra tekrar deneniyor`);
       await sleep(wait);
     }
