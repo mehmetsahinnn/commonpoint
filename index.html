@@ -1129,11 +1129,24 @@ function buildGraph(lines){
   const n=stops.length,par=new Int32Array(n);
   for(let i=0;i<n;i++)par[i]=i;
   const find=x=>{while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;};
-  const cells=new Map(),CS=0.008,nn=stops.map(s=>normName(s.name)),coordFirst=new Map();
+  const nn=stops.map(s=>normName(s.name));
+  /* Her kümenin kapladığı dikdörtgen: zincirleme birleşme yüzünden bir aktarma noktası kilometrelerce yayılmasın.
+     Küme içinde yürüme süresiz sayıldığı için küme genişledikçe adalet bozulur, bu yüzden yayılım sınırlıdır. */
+  const bla0=new Float64Array(n),bla1=new Float64Array(n),blo0=new Float64Array(n),blo1=new Float64Array(n),sp0=new Float64Array(n);
+  for(let i=0;i<n;i++){bla0[i]=bla1[i]=stops[i].lat;blo0[i]=blo1[i]=stops[i].lng;}
+  const join=(i,j,cap)=>{
+    const a=find(i),b=find(j);if(a===b) return;
+    const la0=Math.min(bla0[a],bla0[b]),la1=Math.max(bla1[a],bla1[b]),lo0=Math.min(blo0[a],blo0[b]),lo1=Math.max(blo1[a],blo1[b]);
+    const sp=hav({lat:la0,lng:lo0},{lat:la1,lng:lo1});
+    /* Sınırı aşan birleşme yapılmaz; küme zaten genişse ve birleşme onu büyütmüyorsa (içeride kalan durak) yapılır */
+    if(sp>cap&&sp>Math.max(sp0[a],sp0[b])+1) return;
+    par[a]=b;bla0[b]=la0;bla1[b]=la1;blo0[b]=lo0;blo1[b]=lo1;sp0[b]=sp;
+  };
+  const cells=new Map(),CS=0.008,coordFirst=new Map(),E=[];
   stops.forEach((s,i)=>{
     /* Aynı düğüm birden çok hatta geçer: aynı koordinattaki duraklar doğrudan birleşir */
     const ck=s.lat+','+s.lng,f0=coordFirst.get(ck);
-    if(f0!==undefined){const a=find(i),b=find(f0);if(a!==b)par[a]=b;return;}
+    if(f0!==undefined){join(i,f0,Infinity);return;}
     coordFirst.set(ck,i);
     const cx=Math.floor(s.lat/CS),cy=Math.floor(s.lng/CS);
     for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
@@ -1143,25 +1156,40 @@ function buildGraph(lines){
         const t=stops[j];
         if(Math.abs(s.lat-t.lat)>0.0056||Math.abs(s.lng-t.lng)>0.0076) continue;
         const d=hav(s,t);
-        /* Otobüs durakları sık dizilir: birbirine zincirleme bağlanıp dev kümeler olmasın diye otobüs-otobüs için dar yarıçap */
-        const bb=s.bus&&t.bus,bm=s.bus!==t.bus;
-        const near=bb?100:bm?220:280,nearName=bb?250:bm?500:600;
-        if(d<=near||(d<=nearName&&nn[i]&&nn[i]===nn[j])){const a=find(i),b=find(j);if(a!==b)par[a]=b;}
+        /* Otobüs durakları sık dizilir: otobüs-otobüs için dar yarıçap. Tür 0 raylı-raylı, 1 karışık, 2 otobüs-otobüs */
+        const kind=s.bus&&t.bus?2:s.bus!==t.bus?1:0;
+        const near=kind===2?100:kind===1?220:280,nearName=kind===2?250:kind===1?500:600;
+        if(d<=near||(d<=nearName&&nn[i]&&nn[i]===nn[j])) E.push([kind,d,i,j]);
       }
     }
     const k=cx+','+cy;let a=cells.get(k);if(!a){a=[];cells.set(k,a);}a.push(i);
   });
+  /* Önce raylı aktarmalar, sonra otobüs-raylı, sonra otobüs-otobüs; her türde yakın olan önce birleşir */
+  E.sort((x,y)=>x[0]-y[0]||x[1]-y[1]);
+  const HUB_SPAN_RAIL=750,HUB_SPAN=450;
+  for(const e of E) join(e[2],e[3],e[0]===0?HUB_SPAN_RAIL:HUB_SPAN);
   const rootHub=new Map(),hubs=[];
   stops.forEach((s,i)=>{
     const r=find(i);let h=rootHub.get(r);
-    if(h==null){h=hubs.length;rootHub.set(r,h);hubs.push({lat:0,lng:0,cnt:0,names:{},lines:new Set()});}
+    if(h==null){h=hubs.length;rootHub.set(r,h);hubs.push({lat:0,lng:0,cnt:0,names:{},rnames:{},lines:new Set()});}
     s.hub=h;const H=hubs[h];H.lat+=s.lat;H.lng+=s.lng;H.cnt++;
-    if(s.name)H.names[s.name]=(H.names[s.name]||0)+1;
+    if(s.name){const o=s.bus?H.names:H.rnames;o[s.name]=(o[s.name]||0)+1;}
   });
   hubs.forEach(H=>{
     H.lat/=H.cnt;H.lng/=H.cnt;H.side=sideOf(H.lat,H.lng);
-    const ks=Object.keys(H.names).sort((a,b)=>H.names[b]-H.names[a]);
-    H.name=ks[0]||'';
+    /* Raylı/vapur durağının adı otobüs duraklarının adından önce gelir: aktarma noktası istasyon adıyla anılır */
+    /* Yazım farkları (Kadiköy / Kadıköy) aynı gruptan sayılır; grupta en çok Türkçe harfi olan yazım seçilir */
+    const FOLD={'ı':'i','İ':'i','I':'i','ç':'c','Ç':'c','ğ':'g','Ğ':'g','ö':'o','Ö':'o','ş':'s','Ş':'s','ü':'u','Ü':'u'};
+    const fold=t=>t.replace(/[ıİIçÇğĞöÖşŞüÜ]/g,c=>FOLD[c]).toLowerCase().replace(/\s+/g,' ').trim();
+    const trN=t=>(t.match(/[çğıöşüÇĞİÖŞÜ]/g)||[]).length;
+    const pick=o=>{
+      const g={};
+      Object.keys(o).forEach(k=>{const f=fold(k);(g[f]=g[f]||{n:0,v:[]}).n+=o[k];g[f].v.push(k);});
+      const best=Object.values(g).sort((a,b)=>b.n-a.n)[0];
+      if(!best) return '';
+      return best.v.sort((a,b)=>trN(b)-trN(a)||o[b]-o[a])[0];
+    };
+    H.name=pick(H.rnames)||pick(H.names);
   });
   const HN=hubs.length;
   let N=HN;

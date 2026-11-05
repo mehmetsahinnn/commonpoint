@@ -41,4 +41,6 @@ node tools/build-data.mjs
 - Overpass kimliksiz istekleri reddeder (HTTP 406), betik bu yüzden `ortak-nokta-data/1.0` User-Agent'ı gönderir. Başka bir ad vermek için `OVERPASS_UA="adın (iletişim)" node tools/build-data.mjs`. HTTP 429 sunucunun yoğun olduğu anlamına gelir, betik bekleyip yeniden dener.
 - Seçenekler: `--city istanbul`, `--embed-only` (indirme yok, `data/` dosyalarını gömer), `--html <dosya>`.
 
+Yakın duraklar tek aktarma noktasında birleşir. Bir aktarma noktası raylı durakları için en çok 750 m, otobüs durakları katılınca en çok 450 m yayılabilir, böylece zincirleme birleşme yürüme süresini gizlemez. Nokta, varsa raylı istasyonun adıyla anılır.
+
 Gerçek otobüs ağı varken kişi yalnızca yürüyerek (en çok 1,5 km) bir durağa gider. Otobüs yaklaşık 15 km/s ortalama hız ve 7 dakika bekleme ile hesaplanır. Yakında hiç durak yoksa eski ortalama hızlı otobüs varsayımı yedek olarak kullanılır.
