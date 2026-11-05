@@ -2,11 +2,11 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Ortak Nokta</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Hanken+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Red+Hat+Display:wght@600;800&display=swap" rel="stylesheet">
 <style>
 /* required styles */
 
@@ -672,267 +672,353 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
 </style>
 <style>
-/* Düzen: solda adres ve sonuç paneli, sağda tam boy harita. Dar ekranda harita üstte sabit kalır.
-   Renk anlamı: kobalt = Avrupa yakası, kehribar = Anadolu yakası, kırmızı = önerilen nokta. */
+/* Tasarım kararları
+   Renk: arayüz mürekkep mavisi nötrler (%60 yüzey, %30 mürekkep) ve tek turkuaz vurgu (%10) kullanır.
+   Ton yalnızca veride anlam taşır: mavi Avrupa, turuncu Anadolu. Buluşma noktası renk değil şekil ve boyutla ayrışır.
+   Koyu temada aynı roller yeniden seçilir, kontrastlar WCAG 4.5:1 (metin) ve 3:1 (işaret) üzerindedir. */
 :root{
-  --bg:#EEF2F5; --panel:#FFFFFF; --soft:#F3F6F8; --ink:#12202C; --muted:#5A6B7A; --line:#D9E0E6;
-  --accent:#0B6E75; --accent-ink:#FFFFFF; --accent-soft:#E0F1F2;
-  --eu:#2457C5; --eu-ink:#FFFFFF; --as:#A85F00; --as-ink:#FFFFFF; --meet:#D6372B; --meet-ink:#FFFFFF;
-  --danger:#B3261E; --shadow:0 1px 4px rgba(18,32,44,.3);
-  --font-display:"Bricolage Grotesque","Hanken Grotesk",system-ui,sans-serif;
-  --font-body:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --font-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --surface:#FBFCFD; --surface-2:#EEF2F5; --ink:#0E2433; --ink-2:#46586A; --ink-3:#5A6C7E;
+  --line:#D5DDE4; --line-strong:#7B8B9B;
+  --accent:#0B7A75; --accent-ink:#075A57;
+  --eu:#2468C0; --as:#B84D08; --on-eu:#FFFFFF; --on-as:#FFFFFF;
+  --net:#8A99A8; --danger:#A8261E;
+  --shadow-panel:0 8px 32px rgba(14,36,51,.18),0 1px 3px rgba(14,36,51,.12);
+  --shadow-mark:0 1px 4px rgba(14,36,51,.45);
+  --font-display:"Red Hat Display","Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-body:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --panel-w:400px; --sheet:55vh;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){
   :root{
-    --bg:#0B1218; --panel:#121C24; --soft:#182530; --ink:#E7EEF3; --muted:#93A4B2; --line:#25343F;
-    --accent:#46C3CB; --accent-ink:#06262A; --accent-soft:#12343A;
-    --eu:#7BA4FF; --eu-ink:#0A1630; --as:#F2B04C; --as-ink:#2A1A00; --meet:#FF6A5C; --meet-ink:#2B0602;
-    --danger:#FF8A80; --shadow:0 1px 5px rgba(0,0,0,.65);
+    --surface:#111C26; --surface-2:#192733; --ink:#E8EEF3; --ink-2:#AEBDCA; --ink-3:#8FA1B1;
+    --line:#2B3B49; --line-strong:#5F7387;
+    --accent:#3FC4B8; --accent-ink:#6FD8CE;
+    --eu:#3987E5; --as:#D95926; --on-eu:#08121B; --on-as:#08121B;
+    --net:#6F8294; --danger:#FF8A80;
+    --shadow-panel:0 8px 32px rgba(0,0,0,.55),0 1px 3px rgba(0,0,0,.5);
+    --shadow-mark:0 1px 5px rgba(0,0,0,.7);
     color-scheme:dark;
   }
 }
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
-body{background:var(--bg);color:var(--ink);font:14px/1.45 var(--font-body);-webkit-text-size-adjust:100%}
+body{background:var(--surface-2);color:var(--ink);font:15px/1.5 var(--font-body);-webkit-text-size-adjust:100%;overflow:hidden}
 button,input,select,textarea{font:inherit;color:inherit}
 [hidden]{display:none!important}
+.sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+h1,h2,p,ol,ul{margin:0}
+ol,ul{padding:0;list-style:none}
+.num{font-variant-numeric:tabular-nums}
 
-.app{display:grid;grid-template-columns:minmax(340px,410px) minmax(0,1fr);height:100%}
-.panel{min-width:0;overflow-y:auto;background:var(--panel);border-right:1px solid var(--line);padding-block:22px 28px;padding-inline:20px}
-.mapwrap{position:relative;min-width:0;min-height:0}
-#map{position:absolute;inset:0;background:var(--bg)}
+/* Harita tam ekran, panel üstünde yüzer */
+#map{position:fixed;inset:0;background:var(--surface-2)}
+.panel{position:fixed;z-index:1000;top:16px;left:16px;bottom:16px;width:var(--panel-w);display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-panel);overflow:hidden}
+.grab{display:none}
+.pscroll{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:18px 18px 20px;display:flex;flex-direction:column;gap:18px}
+.cta{flex:none;display:flex;flex-direction:column;gap:8px;padding:12px 18px calc(16px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--surface)}
 
-.head h1{font:700 27px/1.1 var(--font-display);letter-spacing:-.01em;margin:0 0 6px}
-.head p{margin:0;color:var(--muted);max-width:46ch}
-.seg.city{margin-top:14px;max-width:260px}
-.sec{display:flex;flex-direction:column;gap:12px;padding-block:18px;border-top:1px solid var(--line)}
-.head{padding-bottom:18px}
-.grp{display:flex;flex-direction:column;gap:8px}
-.lbl{font:600 11px/1.2 var(--font-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+/* Üst bilgi */
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{display:flex;align-items:center;gap:10px;font:800 20px/1 var(--font-display);letter-spacing:-.01em}
+.brand svg{width:34px;height:26px;flex:none}
+.lead{color:var(--ink-2);max-width:44ch;margin-top:-6px}
 
-.field{width:100%;min-width:0;height:42px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);outline:none}
-.field:focus{border-color:var(--accent)}
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.addrow{display:flex;gap:8px}
-.btn{display:inline-flex;align-items:center;justify-content:center;height:42px;padding:0 16px;border:1px solid var(--line);border-radius:8px;background:var(--panel);cursor:pointer;font-weight:600;text-decoration:none;color:var(--ink)}
-.btn:hover{background:var(--soft)}
-.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);height:46px;font-size:15px}
-.btn.primary:hover{filter:brightness(1.07)}
-.btn:disabled{opacity:.55;cursor:default}
-.btn.small{height:34px;padding:0 12px;font-size:13px}
-.link{border:0;background:none;color:var(--accent);cursor:pointer;font-weight:600;padding:4px 2px}
-
-.hits{list-style:none;margin:0;padding:4px;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:var(--shadow)}
-.hits button{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:6px;cursor:pointer}
-.hits button:hover{background:var(--soft)}
-.hits b{display:block;font-weight:600}
-.hits span{display:block;color:var(--muted);font-size:12.5px}
-
-.check{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px;cursor:pointer}
-.check input{accent-color:var(--accent);width:16px;height:16px;margin:0}
-details>summary{cursor:pointer;color:var(--muted);font-size:13px;font-weight:600}
-details[open]>summary{margin-bottom:8px}
-.bulk textarea{width:100%;min-height:92px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);resize:vertical;margin-bottom:8px}
-
-.sechead{display:flex;align-items:center;gap:8px}
-.count{font:500 12px var(--font-mono);color:var(--muted)}
-.sechead .link{margin-left:auto}
-.people{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
-.person{display:grid;grid-template-columns:28px minmax(0,1fr) auto 28px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);cursor:pointer}
-.person:last-child{border-bottom:0}
-.pname{width:100%;min-width:0;border:0;background:none;padding:2px 4px;margin-left:-4px;border-radius:4px;font-weight:600}
-.pname:hover{background:var(--soft)}
-.paddr{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ptime{font:500 13px var(--font-mono);text-align:right;white-space:nowrap}
-.x{width:28px;height:28px;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1}
-.x:hover{background:var(--soft);color:var(--danger)}
-.empty{color:var(--muted);display:flex;flex-direction:column;gap:10px;align-items:flex-start;margin:0}
-.empty p{margin:0}
-
-.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px;background:var(--soft)}
+/* Seçici (segment) */
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px;background:var(--surface-2)}
 .seg label{display:block;position:relative}
 .seg input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
-.seg span{display:block;text-align:center;padding:8px 6px;border-radius:7px;font-weight:600;font-size:13px;color:var(--muted)}
-.seg input:checked+span{background:var(--panel);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
-.seg input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+.seg span{display:flex;align-items:center;justify-content:center;min-height:36px;padding:0 12px;border-radius:7px;font-weight:700;font-size:14px;color:var(--ink-2)}
+.seg input:checked+span{background:var(--surface);color:var(--ink);box-shadow:0 0 0 1px var(--line-strong)}
+.seg input:focus-visible+span{outline:3px solid var(--accent);outline-offset:1px}
 .seg input:disabled+span{opacity:.5}
-.hint{margin:0;color:var(--muted);font-size:13px}
+.seg.city{width:176px;flex:none}
 
+/* Adres ekleme */
+.add{display:flex;flex-direction:column;gap:10px}
+.search{display:flex;align-items:center;gap:8px;min-height:48px;padding:0 6px 0 14px;border:1.5px solid var(--line-strong);border-radius:12px;background:var(--surface)}
+.search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}
+.search svg{width:18px;height:18px;flex:none;color:var(--ink-3)}
+.search input{flex:1;min-width:0;border:0;outline:0;background:none;height:44px;font-size:16px}
+.search input::placeholder{color:var(--ink-3)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;border:1.5px solid var(--line-strong);border-radius:10px;background:var(--surface);cursor:pointer;font-weight:700;text-decoration:none;color:var(--ink)}
+.btn:hover{background:var(--surface-2)}
+.btn.sm{min-height:40px;padding:0 14px;font-size:14px}
+.btn.plain{border-color:transparent;background:var(--surface-2)}
+.btn.plain:hover{background:color-mix(in srgb,var(--ink) 10%,var(--surface-2))}
+.search .btn{min-height:38px;border-radius:8px}
+.btn.primary{width:100%;min-height:52px;border-color:var(--ink);background:var(--ink);color:var(--surface);font:800 17px/1 var(--font-display);letter-spacing:.005em}
+.btn.primary:hover{background:color-mix(in srgb,var(--ink) 88%,var(--accent))}
+.btn.primary[aria-disabled="true"]{background:var(--surface-2);border-color:var(--line-strong);color:var(--ink-2)}
+.btn:disabled{opacity:.6;cursor:default}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 14px;border:1.5px solid var(--line-strong);border-radius:99px;background:var(--surface);cursor:pointer;font-weight:700;font-size:14px}
+.chip:hover{background:var(--surface-2)}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.chip svg{width:16px;height:16px}
+.link{border:0;background:none;color:var(--accent-ink);cursor:pointer;font-weight:700;padding:8px 4px;min-height:40px}
+.link:hover{text-decoration:underline}
+.hits{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.hits li+li{border-top:1px solid var(--line)}
+.hits button{display:block;width:100%;min-height:52px;text-align:left;border:0;background:var(--surface);padding:8px 14px;cursor:pointer}
+.hits button:hover{background:var(--surface-2)}
+.hits b{display:block;font-weight:700}
+.hits span{display:block;color:var(--ink-2);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#bulkBox{display:flex;flex-direction:column;gap:8px}
+#bulk{width:100%;min-height:96px;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:10px;background:var(--surface);resize:vertical}
+#bulk:focus{outline:0;border-color:var(--accent)}
+.status{font-size:14px;color:var(--ink-2);min-height:0}
+.status:empty{display:none}
+.status.err{color:var(--danger);font-weight:700}
+
+/* Kişiler */
+.sechead{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.sechead h2{font:800 17px/1.2 var(--font-display)}
+.count{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 7px;border-radius:99px;background:var(--surface-2);font-size:13px;font-weight:700;margin-left:6px;font-variant-numeric:tabular-nums}
+.sechead .link{margin-left:auto}
+.people{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.people:empty{display:none}
+.person{padding:10px 8px 10px 12px;background:var(--surface)}
+.person+.person{border-top:1px solid var(--line)}
+.person.eu{--c:var(--eu);--on:var(--on-eu)}
+.person.as{--c:var(--as);--on:var(--on-as)}
+.prow{display:grid;grid-template-columns:30px minmax(0,1fr) auto 40px;gap:10px;align-items:center;cursor:pointer}
+.pin{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--c,var(--eu));color:var(--on,var(--on-eu));font:800 14px/1 var(--font-display);border:2.5px solid var(--surface);box-shadow:var(--shadow-mark);font-variant-numeric:tabular-nums}
+.pin.eu{--c:var(--eu);--on:var(--on-eu)}
+.pin.as{--c:var(--as);--on:var(--on-as)}
+.person .pin{width:30px;height:30px;border-width:0;box-shadow:none;font-size:13px}
+.pname{width:100%;min-width:0;border:0;border-radius:6px;background:none;padding:2px 6px;margin-left:-6px;font-weight:700;font-size:15px}
+.pname:hover{background:var(--surface-2)}
+.pname:focus{outline:0;background:var(--surface-2);box-shadow:inset 0 -2px 0 var(--accent)}
+.paddr{color:var(--ink-2);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ptime{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font:800 16px/1.1 var(--font-display);white-space:nowrap;font-variant-numeric:tabular-nums}
+.ptime:empty{display:none}
+.longest{font:700 11px/1 var(--font-body);padding:3px 6px;border-radius:99px;background:var(--ink);color:var(--surface)}
+.x{width:40px;height:40px;border:0;border-radius:8px;background:none;color:var(--ink-3);cursor:pointer;font-size:22px;line-height:1}
+.x:hover{background:var(--surface-2);color:var(--danger)}
+.trip{margin:8px 0 0 40px;padding-right:48px;display:flex;flex-direction:column;gap:6px}
+.jtrack{height:24px;border-radius:6px;background:var(--surface-2);overflow:hidden}
+.jfill{height:100%;display:flex;gap:2px}
+.js{display:flex;align-items:center;justify-content:center;min-width:3px;overflow:hidden;white-space:nowrap;font-size:11px;font-weight:700;border-radius:3px}
+.js i{font-style:normal;padding:0 4px}
+.js:first-child{border-radius:6px 3px 3px 6px}
+.js:last-child{border-radius:3px 6px 6px 3px}
+.js.walk{background:color-mix(in srgb,var(--c) 20%,var(--surface));color:var(--ink)}
+.js.bus{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--c) 46%,var(--surface)) 0 5px,color-mix(in srgb,var(--c) 26%,var(--surface)) 5px 10px);color:var(--ink)}
+.js.ride{background:var(--c);color:var(--on)}
+.tsum{font-size:13px;color:var(--ink-2);overflow-wrap:anywhere}
+.empty{display:flex;flex-direction:column;gap:12px;align-items:flex-start;padding:16px;border:1.5px dashed var(--line-strong);border-radius:14px;color:var(--ink-2)}
+.empty b{color:var(--ink);font:800 17px/1.25 var(--font-display)}
+
+/* Sonuç */
+.result{display:flex;flex-direction:column;gap:14px;padding:18px;border:2px solid var(--ink);border-radius:16px;background:var(--surface)}
+.headline{font:800 24px/1.15 var(--font-display);letter-spacing:-.015em;text-wrap:balance}
+.station{display:flex;gap:12px;align-items:center}
+.mk{flex:none;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:var(--ink);color:var(--surface);font:800 19px/1 var(--font-display);box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--ink)}
+.station>div{min-width:0;display:flex;flex-direction:column;gap:2px}
+.sname{font:800 18px/1.2 var(--font-display);overflow-wrap:anywhere}
+.slines,.saddr{font-size:13px;color:var(--ink-2);overflow-wrap:anywhere}
+.coordrow{display:flex;gap:8px;flex-wrap:wrap}
+.coordrow .btn{flex:1 1 120px;justify-content:center}
+.coordrow input{flex:1 1 100%;min-width:0;min-height:44px;padding:0 12px;border:1.5px solid var(--line-strong);border-radius:10px;background:var(--surface-2);font-weight:700;font-variant-numeric:tabular-nums}
+.facts{color:var(--ink-2);font-size:14px}
+.fine{color:var(--ink-3);font-size:12.5px}
+.altrow{display:flex;flex-wrap:wrap;gap:8px}
+.altrow button{display:inline-flex;align-items:center;gap:8px;min-height:40px;max-width:100%;padding:0 12px 0 6px;border:1.5px solid var(--line-strong);border-radius:99px;background:var(--surface);cursor:pointer;font-weight:700;font-size:13.5px}
+.altrow button:hover{background:var(--surface-2)}
+.altrow button[aria-current="true"]{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.altrow .l{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;border:2px solid currentColor;font:800 12px/1 var(--font-display);flex:none}
+.altrow .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:15ch}
+
+/* Seçenekler ve açıklama */
+details.opts,details.how{border-top:1px solid var(--line);padding-top:6px}
+details>summary{display:flex;align-items:center;min-height:44px;cursor:pointer;font-weight:700;color:var(--ink-2);list-style:none}
+details>summary::-webkit-details-marker{display:none}
+details>summary::after{content:"";margin-left:auto;width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform .2s}
+details[open]>summary::after{transform:rotate(-135deg)}
+.optbody{display:flex;flex-direction:column;gap:14px;padding:6px 0 10px}
+.grp{display:flex;flex-direction:column;gap:8px}
+.lbl{font-weight:700;font-size:14px}
+.hint{color:var(--ink-2);font-size:13px}
+.check{display:flex;gap:10px;align-items:center;min-height:36px;cursor:pointer}
+.check input{accent-color:var(--accent);width:20px;height:20px;margin:0}
+.field{width:100%;min-height:44px;padding:0 10px;border:1.5px solid var(--line-strong);border-radius:10px;background:var(--surface)}
+.how ol{display:flex;flex-direction:column;gap:8px;list-style:decimal;padding-left:20px;color:var(--ink-2);font-size:14px}
+.how p{color:var(--ink-2);font-size:14px;margin-top:10px}
+
+/* Alt çubuk: hazırlık, ilerleme, ana eylem */
+.ready{font-size:14px;color:var(--ink-2)}
 .prog{display:flex;flex-direction:column;gap:6px}
-.bar{height:6px;border-radius:99px;background:var(--soft);overflow:hidden;border:1px solid var(--line)}
-.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
-.ptxt{margin:0;color:var(--muted);font-size:13px}
-.status{margin:0;font-size:13px;color:var(--muted);min-height:1.2em}
-.status.err{color:var(--danger)}
+.bar{height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden;border:1px solid var(--line)}
+.bar i{display:block;height:100%;width:0;background:var(--accent);border-radius:99px;transition:width .35s ease-out}
+.ptxt{font-size:13px;color:var(--ink-2)}
 
-.result{display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}
-.rtitle{display:flex;gap:10px;align-items:flex-start}
-.badge{flex:none;width:30px;height:30px;border-radius:50%;background:var(--meet);color:var(--meet-ink);display:grid;place-items:center;font:700 14px var(--font-mono)}
-.rtitle h2{margin:0;font:700 19px/1.2 var(--font-display);overflow-wrap:anywhere}
-.rtitle p{margin:2px 0 0;color:var(--muted);font-size:13px;overflow-wrap:anywhere}
-.coordrow{display:flex;gap:8px}
-.field.mono{font:500 13px var(--font-mono);height:34px}
-.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.stat{padding:8px 10px;border-radius:8px;background:var(--panel);border:1px solid var(--line)}
-.stat small{display:block;color:var(--muted);font-size:11.5px}
-.stat b{font:500 16px var(--font-mono);white-space:nowrap}
-.note{margin:0;font-size:13px;color:var(--muted)}
-.trips{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}
-.trips li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px}
-.trips .tn{font-weight:600;overflow-wrap:anywhere}
-.trips .tt{font:500 13px var(--font-mono);white-space:nowrap}
-.trips .ts{grid-column:1/-1;color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
-.alts{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:2px}
-.alts button{width:100%;display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px;border:1px solid transparent;border-radius:8px;background:none;text-align:left;cursor:pointer}
-.alts button:hover{background:var(--panel)}
-.alts button[aria-current="true"]{background:var(--panel);border-color:var(--line)}
-.alts .l{width:24px;height:24px;border-radius:50%;border:2px solid var(--meet);display:grid;place-items:center;font:600 11px var(--font-mono)}
-.alts .n{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.alts .k{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.alts .t{font:500 12px var(--font-mono);text-align:right;color:var(--muted);white-space:nowrap}
-
-.foot{display:flex;flex-direction:column;gap:10px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
-.foot p{margin:0}
-.foot ol{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
-
-/* Harita üzerindeki işaretler */
-.pin{width:28px;height:28px;border-radius:50%;background:var(--eu);color:var(--eu-ink);display:grid;place-items:center;font:600 12px var(--font-mono);border:2px solid var(--panel);box-shadow:var(--shadow)}
-.pin.as{background:var(--as);color:var(--as-ink)}
-.meet{position:relative;width:36px;height:36px;border-radius:50%;background:var(--meet);color:var(--meet-ink);display:grid;place-items:center;font:700 15px var(--font-mono);border:3px solid var(--panel);box-shadow:0 0 0 2px var(--meet),var(--shadow)}
-.meet::before{content:"";position:absolute;inset:-9px;border-radius:50%;border:2px solid var(--meet);opacity:0;animation:pulse 2s ease-out 2}
-@keyframes pulse{0%{transform:scale(.7);opacity:.7}100%{transform:scale(1.25);opacity:0}}
-@media (prefers-reduced-motion: reduce){.meet::before{animation:none}.bar i{transition:none}}
-.alt{width:26px;height:26px;border-radius:50%;background:var(--panel);color:var(--ink);border:2px solid var(--meet);display:grid;place-items:center;font:600 11px var(--font-mono);box-shadow:var(--shadow)}
-.maptools{position:absolute;left:12px;bottom:30px;z-index:800;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;max-width:calc(100% - 24px);padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);font-size:12.5px;box-shadow:var(--shadow)}
-.maptools .it{display:flex;align-items:center;gap:6px}
-.maptools .sw{width:11px;height:11px;border-radius:50%;display:inline-block}
-.sw.eu{background:var(--eu)}.sw.as{background:var(--as)}.sw.meet{background:var(--meet)}.sw.cand{background:var(--accent);opacity:.6}
-.maptools label{display:flex;align-items:center;gap:6px;cursor:pointer}
-.maptools input{accent-color:var(--accent);margin:0}
-.maptools select{height:28px;border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:0 6px;font-size:12.5px}
-.maptip{position:absolute;left:50%;top:16px;transform:translateX(-50%);z-index:900;width:min(440px,calc(100% - 110px));display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:12px 14px;border:1px solid var(--danger);border-radius:10px;background:var(--panel);color:var(--ink);font-size:13px;box-shadow:var(--shadow)}
-.maptip span{color:var(--muted)}
+/* Harita üstü öğeler */
+.legend{position:fixed;z-index:900;left:calc(var(--panel-w) + 32px);bottom:28px;display:flex;gap:14px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-mark);font-size:13px;font-weight:700}
+.legend .it{display:flex;align-items:center;gap:6px}
+.legend .sw{width:12px;height:12px;border-radius:50%;display:inline-block}
+.sw.eu{background:var(--eu)}.sw.as{background:var(--as)}
+.pickbar{position:fixed;z-index:1100;top:20px;left:calc(var(--panel-w) + 32px + (100vw - var(--panel-w) - 32px)/2);transform:translateX(-50%);display:flex;align-items:center;gap:12px;padding:8px 8px 8px 16px;border-radius:99px;background:var(--ink);color:var(--surface);font-weight:700;box-shadow:var(--shadow-panel);white-space:nowrap}
+.pickbar .btn{min-height:36px;border-color:transparent;background:var(--surface);color:var(--ink);border-radius:99px}
+.maptip{position:fixed;z-index:1100;left:calc(var(--panel-w) + 32px + (100vw - var(--panel-w) - 32px)/2);top:20px;transform:translateX(-50%);width:min(440px,calc(100vw - var(--panel-w) - 96px));display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:14px 16px;border:2px solid var(--danger);border-radius:14px;background:var(--surface);box-shadow:var(--shadow-panel);font-size:14px}
+.maptip span{color:var(--ink-2)}
+.pin-map{width:32px;height:32px;font-size:14px}
+.meet{position:relative;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:var(--ink);color:var(--surface);font:800 19px/1 var(--font-display);border:3px solid var(--surface);box-shadow:0 0 0 2px var(--ink),var(--shadow-mark)}
+.meet::before{content:"";position:absolute;inset:-12px;border-radius:50%;border:3px solid var(--accent);opacity:0;animation:pulse 1.8s ease-out 2}
+@keyframes pulse{0%{transform:scale(.6);opacity:.9}100%{transform:scale(1.2);opacity:0}}
+.alt{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--surface);color:var(--ink);border:2.5px solid var(--ink);font:800 13px/1 var(--font-display);box-shadow:var(--shadow-mark)}
+.leaflet-tooltip.mt{background:var(--ink);color:var(--surface);border:0;font-weight:800;font-size:13px;padding:5px 9px;box-shadow:var(--shadow-mark)}
+.leaflet-tooltip-bottom.mt:before{border-bottom-color:var(--ink)}
+.leaflet-tile-pane{filter:saturate(.55) contrast(.95)}
 @media (prefers-color-scheme: dark){
-  .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.75)}
+  .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.85) saturate(.5)}
 }
 .map-add .leaflet-grab{cursor:crosshair}
-.map-add.leaflet-dragging .leaflet-grab{cursor:grabbing}
+.leaflet-container{font-family:var(--font-body);background:var(--surface-2)}
+.leaflet-bar{border:1px solid var(--line)!important;box-shadow:var(--shadow-mark)!important}
+.leaflet-bar a,.leaflet-bar a:hover{background:var(--surface);color:var(--ink);border-bottom-color:var(--line)}
+.leaflet-bar a:hover{background:var(--surface-2)}
+.leaflet-control-attribution{background:color-mix(in srgb,var(--surface) 85%,transparent)!important;color:var(--ink-2)!important;font-size:11px}
+.leaflet-control-attribution a{color:var(--accent-ink)!important}
+.leaflet-tooltip{background:var(--surface);color:var(--ink);border:1px solid var(--line);box-shadow:var(--shadow-mark);font-weight:700}
+.leaflet-tooltip-top:before{border-top-color:var(--surface)}
+@media (pointer:coarse){
+  .leaflet-touch .leaflet-bar a{width:40px;height:40px;line-height:40px}
+}
+@media (prefers-reduced-motion: reduce){
+  .meet::before{animation:none}
+  .bar i,details>summary::after,.panel{transition:none!important}
+}
 
-.leaflet-container{font-family:var(--font-body);background:var(--bg)}
-.leaflet-bar a,.leaflet-bar a:hover{background:var(--panel);color:var(--ink);border-bottom-color:var(--line)}
-.leaflet-bar a:hover{background:var(--soft)}
-.leaflet-bar{border:1px solid var(--line);box-shadow:var(--shadow)}
-.leaflet-control-attribution{background:color-mix(in srgb,var(--panel) 82%,transparent)!important;color:var(--muted)!important}
-.leaflet-control-attribution a{color:var(--accent)!important}
-.leaflet-tooltip{background:var(--panel);color:var(--ink);border:1px solid var(--line);box-shadow:var(--shadow);font-weight:600}
-.leaflet-tooltip-top:before{border-top-color:var(--panel)}
-
-@media (max-width:820px){
-  html,body{height:auto}
-  .app{display:flex;flex-direction:column;height:auto}
-  .mapwrap{order:-1;position:sticky;top:0;z-index:20;height:46vh;border-bottom:1px solid var(--line)}
-  .panel{overflow:visible;border-right:0;padding-inline:16px}
-  .maptools{bottom:26px;font-size:12px;gap:4px 10px;padding:6px 10px}
+/* Telefon: alttan açılan sayfa */
+@media (max-width:899px){
+  :root{--panel-w:100vw}
+  .panel{top:auto;left:0;right:0;bottom:0;width:auto;height:var(--sheet);max-height:92vh;border-radius:20px 20px 0 0;border-width:1px 0 0 0;transition:height .3s cubic-bezier(.2,.8,.2,1)}
+  body.dragging .panel{transition:none}
+  .grab{display:flex;flex:none;align-items:center;justify-content:center;width:100%;height:28px;border:0;background:none;cursor:grab;touch-action:none}
+  .grab span{width:44px;height:5px;border-radius:99px;background:var(--line-strong)}
+  .pscroll{padding:4px 16px 20px}
+  .cta{padding-inline:16px}
+  .panel[data-sheet="peek"] .pscroll{visibility:hidden}
+  .legend{display:none}
+  .pickbar{left:50%;top:max(16px,env(safe-area-inset-top,0px))}
+  .maptip{left:50%;width:calc(100vw - 32px);top:max(16px,env(safe-area-inset-top,0px))}
+  .headline{font-size:22px}
+  .leaflet-top.leaflet-right{margin-top:max(0px,env(safe-area-inset-top,0px))}
 }
 </style>
 </head>
 <body>
-<div class="app">
-  <aside class="panel" id="panel">
-    <header class="head">
-      <h1>Ortak Nokta</h1>
-      <p id="lead"></p>
+<div id="map" role="application" aria-label="Harita"></div>
+
+<aside class="panel" id="panel" data-sheet="half" aria-label="Buluşma noktası paneli">
+  <button class="grab" id="grab" type="button" aria-label="Paneli büyüt veya küçült" aria-expanded="true"><span></span></button>
+  <div class="pscroll" id="pscroll">
+    <header class="top">
+      <div class="brand">
+        <svg viewBox="0 0 34 26" aria-hidden="true"><defs><clipPath id="lens"><circle cx="12" cy="13" r="11"/></clipPath></defs><circle cx="12" cy="13" r="11" fill="var(--eu)"/><circle cx="22" cy="13" r="11" fill="var(--as)"/><circle cx="22" cy="13" r="11" fill="var(--ink)" clip-path="url(#lens)"/></svg>
+        <span>Ortak Nokta</span>
+      </div>
       <div class="seg city" id="citySeg" role="radiogroup" aria-label="Şehir">
         <label><input type="radio" name="city" value="istanbul"><span>İstanbul</span></label>
         <label><input type="radio" name="city" value="bursa"><span>Bursa</span></label>
       </div>
     </header>
+    <p class="lead" id="lead"></p>
 
-    <section class="sec">
-      <div class="grp">
-        <label class="lbl" for="q">Adres ekle</label>
-        <form id="addForm" class="addrow" autocomplete="off">
-          <input id="q" class="field" type="search" placeholder="Örn. Moda Caddesi 50 Kadıköy" enterkeyhint="search">
-          <button class="btn" id="qBtn" type="submit">Ara</button>
-        </form>
-        <ul id="hits" class="hits" hidden></ul>
-        <label class="check"><input type="checkbox" id="clickAdd" checked> Haritaya tıklayınca nokta ekle</label>
+    <section class="add" aria-label="Adres ekle">
+      <form id="addForm" class="search" autocomplete="off">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M13 13l4 4"/></svg>
+        <label class="sr" for="q">Adres, koordinat veya Haritalar bağlantısı</label>
+        <input id="q" type="search" placeholder="Adres, koordinat veya Haritalar bağlantısı" enterkeyhint="search" autocapitalize="off">
+        <button class="btn" id="qBtn" type="submit">Ara</button>
+      </form>
+      <ul id="hits" class="hits" hidden></ul>
+      <div class="chips">
+        <button type="button" class="chip" id="pickBtn" aria-pressed="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 14s5-4.4 5-8A5 5 0 0 0 3 6c0 3.6 5 8 5 8z"/><circle cx="8" cy="6" r="1.6"/></svg>Haritadan seç</button>
+        <button type="button" class="chip" id="bulkBtn" aria-expanded="false" aria-controls="bulkBox">Çok satırlı ekle</button>
       </div>
-      <details class="bulk">
-        <summary>Birden çok adres ekle</summary>
-        <textarea id="bulk" placeholder="Her satıra bir adres ya da &quot;41.0082, 28.9784&quot; gibi bir koordinat yaz"></textarea>
-        <button class="btn small" id="bulkGo" type="button">Hepsini ekle</button>
-      </details>
+      <div id="bulkBox" hidden>
+        <label class="sr" for="bulk">Her satıra bir adres veya koordinat</label>
+        <textarea id="bulk" placeholder="Her satıra bir adres veya koordinat yaz"></textarea>
+        <button class="btn sm" id="bulkGo" type="button">Hepsini ekle</button>
+      </div>
     </section>
+    <p id="status" class="status" role="status" aria-live="polite"></p>
 
-    <section class="sec">
-      <div class="sechead">
-        <span class="lbl">Kişiler</span><span class="count" id="count">0</span>
-        <button class="link" id="clearAll" type="button" hidden>Hepsini sil</button>
-      </div>
+    <section id="resultSec" aria-label="Sonuç" hidden></section>
+
+    <section aria-label="Kişiler">
+      <div class="sechead"><h2>Kişiler</h2><span class="count" id="count">0</span><button class="link" id="clearAll" type="button" hidden>Hepsini sil</button></div>
       <ol id="people" class="people"></ol>
       <div id="empty" class="empty">
-        <p>Henüz nokta yok. Yukarıya bir adres yaz ya da haritaya tıkla. Noktaları sürükleyerek taşıyabilirsin.</p>
-        <button class="btn small" id="sample" type="button">Örnek 4 nokta yükle</button>
+        <b>Kimler yola çıkacak?</b>
+        <span>Her kişinin çıkış adresini ekle. En az iki kişi gerekir.</span>
+        <button class="btn sm plain" id="sample" type="button">Örnek 4 nokta yükle</button>
       </div>
     </section>
 
-    <section class="sec">
-      <p class="hint" id="modeHint">Ölçüt tek: hiç kimse çok uzağa gitmesin. Herkesin en uzun yolculuğu en kısa olan durak seçilir, toplam süre hesaba katılmaz.</p>
-      <div class="grp" id="sideGrp">
-        <span class="lbl" id="lblSide">Buluşma yakası</span>
-        <div class="seg" role="radiogroup" aria-labelledby="lblSide">
-          <label><input type="radio" name="side" value="auto" checked><span>Otomatik</span></label>
-          <label><input type="radio" name="side" value="eu"><span>Avrupa</span></label>
-          <label><input type="radio" name="side" value="as"><span>Anadolu</span></label>
+    <details class="opts" id="opts">
+      <summary>Seçenekler</summary>
+      <div class="optbody">
+        <div class="grp" id="sideGrp">
+          <span class="lbl" id="lblSide">Buluşma yakası</span>
+          <div class="seg" role="radiogroup" aria-labelledby="lblSide">
+            <label><input type="radio" name="side" value="auto" checked><span>Otomatik</span></label>
+            <label><input type="radio" name="side" value="eu"><span>Avrupa</span></label>
+            <label><input type="radio" name="side" value="as"><span>Anadolu</span></label>
+          </div>
+          <p class="hint">Otomatik seçimde nokta iki yakadan birinde çıkabilir.</p>
+        </div>
+        <div class="grp">
+          <label class="check"><input type="checkbox" id="showNet" checked> Hat ağını haritada göster</label>
+          <label class="check"><input type="checkbox" id="showCands" checked> Denenen durakları göster</label>
+        </div>
+        <div class="grp">
+          <label class="lbl" for="base">Harita kaynağı</label>
+          <select id="base" class="field"></select>
+        </div>
+        <div class="grp">
+          <span class="lbl">Hat verisi</span>
+          <p class="hint" id="netInfo">Henüz indirilmedi.</p>
+          <button class="btn sm" id="netReload" type="button">Yeniden indir</button>
         </div>
       </div>
-      <button id="run" class="btn primary" type="button">Buluşma noktasını bul</button>
-      <div id="prog" class="prog" hidden>
-        <div class="bar"><i id="barFill"></i></div>
-        <p class="ptxt" id="ptxt"></p>
-      </div>
-      <p id="status" class="status" role="status" aria-live="polite"></p>
-    </section>
+    </details>
 
-    <section id="resultSec" class="sec" hidden></section>
-
-    <footer class="foot">
-      <p id="netNote"></p>
-      <details>
-        <summary>Nasıl çalışır?</summary>
+    <details class="how">
+      <summary>Nasıl hesaplanıyor?</summary>
+      <div class="optbody">
         <ol>
           <li>Hat verisinden bir ağ kurulur. Her durak bir düğümdür, hatlar duraklar arasındaki kenarlardır. Aynı yerdeki duraklar tek aktarma noktası olur.</li>
           <li>Her kişiden Dijkstra algoritması çalışır. Kişi önce yürüyerek ya da otobüsle bir durağa gider, sonra hatlar üzerinden her durağa en kısa süreyle ulaşır. Her biniş için bekleme süresi eklenir.</li>
           <li>Her durak bir aday koordinattır. Herkesin ulaşabildiği duraklar arasından, en uzun yolculuğu en kısa olan önerilir. Eşitlikte ortalaması düşük olan seçilir.</li>
         </ol>
-      </details>
-      <details>
-        <summary>Hat verisi</summary>
-        <p id="netInfo">Henüz indirilmedi.</p>
-        <button class="btn small" id="netReload" type="button">Yeniden indir</button>
-      </details>
-    </footer>
-  </aside>
+        <p id="netNote"></p>
+      </div>
+    </details>
+  </div>
 
-  <main class="mapwrap">
-    <div id="map" role="application" aria-label="Harita"></div>
-    <div class="maptools">
-      <span class="it" id="lgEu"><i class="sw eu"></i><span id="lgEuT">Avrupa</span></span>
-      <span class="it" id="lgAs"><i class="sw as"></i>Anadolu</span>
-      <span class="it"><i class="sw meet"></i>Öneri</span>
-      <label><input type="checkbox" id="showNet" checked>Hatlar</label>
-      <label><input type="checkbox" id="showCands" checked><i class="sw cand"></i>Denenen duraklar</label>
-      <label class="basesel">Harita <select id="base" aria-label="Harita kaynağı"></select></label>
+  <div class="cta" id="cta">
+    <p class="ready" id="ready"></p>
+    <div id="prog" class="prog" hidden>
+      <div class="bar"><i id="barFill"></i></div>
+      <p class="ptxt" id="ptxt"></p>
     </div>
-    <div class="maptip" id="tileTip" role="alert" hidden>
-      <b>Harita karoları yüklenemedi.</b>
-      <span>Dosyayı Claude içindeki önizlemede değil, indirip Chrome veya Safari'de aç. Haritanın altındaki "Harita" listesinden başka bir kaynak seçebilirsin. İnternet bağlantını ve reklam engelleyiciyi de kontrol et.</span>
-      <button class="btn small" id="tileRetry" type="button">Yeniden dene</button>
-    </div>
-  </main>
+    <button id="run" class="btn primary" type="button">Buluşma noktasını bul</button>
+  </div>
+</aside>
+
+<div class="legend" id="legend" aria-label="Renk açıklaması">
+  <span class="it" id="lgEu"><i class="sw eu"></i><span id="lgEuT">Avrupa yakası</span></span>
+  <span class="it" id="lgAs"><i class="sw as"></i>Anadolu yakası</span>
+</div>
+<div class="pickbar" id="pickbar" role="status" hidden><span>Haritada bir noktaya dokun</span><button class="btn" id="pickDone" type="button">Bitti</button></div>
+<div class="maptip" id="tileTip" role="alert" hidden>
+  <b>Harita karoları yüklenemedi.</b>
+  <span>Dosyayı Claude içindeki önizlemede değil, indirip Chrome veya Safari'de aç. Seçenekler bölümünden başka bir harita kaynağı seçebilirsin. İnternet bağlantını ve reklam engelleyiciyi de kontrol et.</span>
+  <button class="btn sm" id="tileRetry" type="button">Yeniden dene</button>
 </div>
 
 <script>
@@ -1248,19 +1334,45 @@ function shortAddr(r){
   if(uniq.length) return uniq.slice(0,3).join(', ');
   return (r.display_name||'').split(',').slice(0,3).join(',').trim();
 }
-async function geocode(q){
-  const m=q.match(/^\s*(-?\d{1,2}\.\d+)\s*[, ]\s*(-?\d{1,3}\.\d+)\s*$/);
+function parseCoords(s){
+  s=String(s||'').trim();
+  const fin=(a,b)=>{
+    if(!isFinite(a)||!isFinite(b)||Math.abs(a)>90||Math.abs(b)>180) return null;
+    if(!inCity(a,b)&&inCity(b,a)) return {lat:b,lng:a}; /* enlem ile boylam ters yazılmışsa çevir */
+    return {lat:a,lng:b};
+  };
+  let m=s.match(/@(-?\d{1,2}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)/)
+    ||s.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/)
+    ||s.match(/[?&](?:q|query|ll|center|destination)=(-?\d{1,2}(?:\.\d+)?)(?:,|%2C)\s*(-?\d{1,3}(?:\.\d+)?)/i);
+  if(m) return fin(+m[1],+m[2]);
+  m=s.match(/^(-?\d{1,2}[.,]\d+)\s*°?\s*([NS])?\s*[,;\s]\s*(-?\d{1,3}[.,]\d+)\s*°?\s*([EW])?$/i);
   if(m){
-    const lat=+m[1],lng=+m[2];
-    if(!inCity(lat,lng)) throw new Error('outside');
-    return [{lat,lng,title:'Koordinat',sub:lat.toFixed(5)+', '+lng.toFixed(5)}];
+    let a=+m[1].replace(',','.'),b=+m[3].replace(',','.');
+    if(/s/i.test(m[2]||'')) a=-a;
+    if(/w/i.test(m[4]||'')) b=-b;
+    return fin(a,b);
   }
-  const url='https://nominatim.openstreetmap.org/search?'+new URLSearchParams({q,format:'jsonv2',addressdetails:'1',limit:'6','accept-language':'tr',countrycodes:'tr',viewbox:VIEWBOX,bounded:'1'});
-  const arr=await nomLimited(()=>getJSON(url));
-  return arr.map(r=>{
+  return null;
+}
+async function nomSearch(q,bounded){
+  const p={q,format:'jsonv2',addressdetails:'1',limit:'6','accept-language':'tr',countrycodes:'tr'};
+  if(bounded){p.viewbox=VIEWBOX;p.bounded='1';}
+  const arr=await nomLimited(()=>getJSON('https://nominatim.openstreetmap.org/search?'+new URLSearchParams(p)));
+  return (arr||[]).filter(r=>inCity(+r.lat,+r.lon)).map(r=>{
     const sub=shortAddr(r);
     return {lat:+r.lat,lng:+r.lon,title:r.name||sub,sub:r.name?sub:(r.display_name||'').split(',').slice(0,4).join(',')};
   });
+}
+async function geocode(q){
+  const c=parseCoords(q);
+  if(c){
+    if(!inCity(c.lat,c.lng)) throw new Error('outside');
+    return [{lat:c.lat,lng:c.lng,title:'Koordinat',sub:c.lat.toFixed(5)+', '+c.lng.toFixed(5)}];
+  }
+  if(/goo\.gl|maps\.app|g\.co\/kgs/i.test(q)) throw new Error('shortlink');
+  let hits=await nomSearch(q,true);
+  if(!hits.length) hits=await nomSearch(q+' '+CITY.name,false);
+  return hits;
 }
 async function reverse(lat,lng){
   const url='https://nominatim.openstreetmap.org/reverse?'+new URLSearchParams({lat:lat.toFixed(6),lon:lng.toFixed(6),format:'jsonv2',zoom:'18',addressdetails:'1','accept-language':'tr'});
@@ -1269,7 +1381,7 @@ async function reverse(lat,lng){
 }
 
 /* ---------- hat verisi (Overpass) ---------- */
-const state={people:[],side:'auto',mode:'max',base:'osmfr',lines:null,graph:null,solved:null,result:null,running:false};
+const state={people:[],side:'auto',mode:'max',base:'osmfr',lines:null,graph:null,solved:null,result:null,running:false,pick:false,sheetBefore:null};
 let nextId=1,epoch=0,graphP=null;
 const TKEY='ortak-nokta-transit-v1'+(CITY.id==='istanbul'?'':'-'+CITY.id);
 const ROUTE_MODE={subway:'metro',light_rail:'metro',tram:'tram',funicular:'funicular',ferry:'ferry',train:'rail',bus:'brt'};
@@ -1336,11 +1448,75 @@ function ensureGraph(force){
 }
 
 /* ---------- harita ---------- */
+const reduceMotion=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+const mobileMQ=window.matchMedia('(max-width: 899px)');
+const panel=$('#panel'),grab=$('#grab'),pscroll=$('#pscroll');
 const map=L.map('map',{zoomControl:false,preferCanvas:true,minZoom:9}).setView(CITY.center,CITY.zoom);
 L.control.zoom({position:'topright',zoomInTitle:'Yakınlaştır',zoomOutTitle:'Uzaklaştır'}).addTo(map);
 map.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
-/* Harita karoları: anahtar gerektirmeyen kaynaklar. Biri yüklenmezse sıradakine geçilir, hepsi başarısız olursa haritada uyarı çıkar.
-   Koyu temada karolar CSS filtresiyle koyulaştırılır. */
+
+/* Alttan açılan sayfa (telefon): üç durak. Masaüstünde panel sabit genişlikte yüzer. */
+let sheet='half';
+const vh=()=>window.innerHeight||document.documentElement.clientHeight||700;
+function sheetPx(st){
+  if(st==='peek') return (grab.offsetHeight||28)+($('#cta').offsetHeight||110);
+  return Math.round(vh()*(st==='half'?.55:.9));
+}
+function applySheet(px){document.documentElement.style.setProperty('--sheet',px+'px');}
+function setSheet(st){
+  sheet=st;applySheet(sheetPx(st));
+  panel.dataset.sheet=st;grab.setAttribute('aria-expanded',String(st!=='peek'));
+}
+/* Harita üstünde panelin kapattığı alan kadar boşluk bırakır, böylece sonuç hep görünür bölgede kalır. */
+function padOpts(){
+  if(mobileMQ.matches) return {paddingTopLeft:[28,76],paddingBottomRight:[28,panel.offsetHeight+24]};
+  return {paddingTopLeft:[panel.offsetWidth+16+48,48],paddingBottomRight:[72,72]};
+}
+function offsetView(){
+  if(mobileMQ.matches) map.panBy([0,panel.offsetHeight/2],{animate:false});
+  else map.panBy([-(panel.offsetWidth+32)/2,0],{animate:false});
+}
+function focusPoint(lat,lng){
+  const ll=L.latLng(lat,lng);
+  map.fitBounds(L.latLngBounds([ll,ll]),Object.assign({maxZoom:Math.max(map.getZoom(),14)},padOpts()));
+}
+let drag=null;
+grab.addEventListener('pointerdown',e=>{
+  if(!mobileMQ.matches) return;
+  drag={y:e.clientY,h:panel.offsetHeight,moved:false};
+  try{grab.setPointerCapture(e.pointerId);}catch(err){}
+  document.body.classList.add('dragging');
+});
+grab.addEventListener('pointermove',e=>{
+  if(!drag) return;
+  const dy=e.clientY-drag.y;
+  if(Math.abs(dy)>5) drag.moved=true;
+  applySheet(Math.max(sheetPx('peek'),Math.min(vh()*.92,drag.h-dy)));
+});
+function endDrag(){
+  if(!drag) return;
+  const d=drag;drag=null;document.body.classList.remove('dragging');
+  if(!d.moved){setSheet(sheet==='peek'?'half':'peek');}
+  else{
+    const h=panel.offsetHeight,opts=['peek','half','full'];
+    let best='half',bd=Infinity;
+    opts.forEach(o=>{const dd=Math.abs(sheetPx(o)-h);if(dd<bd){bd=dd;best=o;}});
+    setSheet(best);
+  }
+  refit();
+}
+grab.addEventListener('pointerup',endDrag);
+grab.addEventListener('pointercancel',endDrag);
+grab.addEventListener('click',e=>{if(e.detail===0){setSheet(sheet==='peek'?'half':'peek');refit();}});
+grab.addEventListener('keydown',e=>{
+  const order=['peek','half','full'],i=order.indexOf(sheet);
+  if(e.key==='ArrowUp'&&i<2){e.preventDefault();setSheet(order[i+1]);refit();}
+  if(e.key==='ArrowDown'&&i>0){e.preventDefault();setSheet(order[i-1]);refit();}
+});
+window.addEventListener('resize',()=>{if(mobileMQ.matches) applySheet(sheetPx(sheet));});
+
+/* Harita karoları: anahtar gerektirmeyen kaynaklar. Biri yüklenmezse sıradakine geçilir, hepsi başarısız olursa uyarı çıkar.
+   Karolar CSS ile soluklaştırılır, böylece veri renkleri zeminden ayrışır. */
 const OSM_ATTR='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 const TILE_SRC=[
   {id:'osmfr',label:'OSM Fransa',url:'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',opts:{subdomains:'abc',maxZoom:20},attr:OSM_ATTR+' · <a href="https://www.openstreetmap.fr">OpenStreetMap France</a>'},
@@ -1368,15 +1544,29 @@ function useTiles(i){
   });
   layer.addTo(map);
 }
-const canvasR=L.canvas({padding:.5});
+const canvasR=L.canvas({padding:.5}),svgR=L.svg({padding:.5});
 const netLayer=L.layerGroup().addTo(map),candLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),resultLayer=L.layerGroup().addTo(map),peopleLayer=L.layerGroup().addTo(map);
 const pmarkers=new Map();
 const sideColor=s=>cssVar(s==='as'?'--as':'--eu');
 
+/* ---------- durum, ilerleme, hazırlık ---------- */
 function setStatus(t,kind){const s=$('#status');s.textContent=t||'';s.className='status'+(kind==='err'?' err':'');}
-function progress(p,text){$('#prog').hidden=false;$('#barFill').style.width=Math.round(Math.max(0,Math.min(1,p))*100)+'%';if(text!=null)$('#ptxt').textContent=text;}
-function hideProgress(){$('#prog').hidden=true;}
-function lock(b){$('#run').disabled=b;$$('input[name=side]').forEach(i=>{i.disabled=b;});}
+let creepT=0,progTimer=0;
+function progress(p,text){clearTimeout(progTimer);$('#prog').hidden=false;$('#barFill').style.width=Math.round(Math.max(0,Math.min(1,p))*100)+'%';if(text!=null)$('#ptxt').textContent=text;}
+function creep(from,to,text){stopCreep();let p=from;progress(p,text);creepT=setInterval(()=>{p+=(to-p)*.07;progress(p);},350);}
+function stopCreep(){clearInterval(creepT);creepT=0;}
+function hideProgress(delay){clearTimeout(progTimer);progTimer=setTimeout(()=>{$('#prog').hidden=true;},delay||0);}
+function updateReady(){
+  const n=state.people.length,run=$('#run');
+  let t;
+  if(n===0) t='Başlamak için en az iki adres ekle.';
+  else if(n===1) t='1 kişi eklendi, 1 kişi daha ekle.';
+  else t=state.result?n+' kişi için hesaplandı.':n+' kişi hazır.';
+  $('#ready').textContent=t;
+  run.setAttribute('aria-disabled',String(n<2));
+  run.textContent=state.running?'Hesaplanıyor…':(state.result?'Yeniden hesapla':'Buluşma noktasını bul');
+}
+function lock(b){$('#run').disabled=b;$$('input[name=side]').forEach(i=>{i.disabled=b;});updateReady();}
 
 const KEY='ortak-nokta-v2'+(CITY.id==='istanbul'?'':'-'+CITY.id);
 function save(){
@@ -1399,13 +1589,32 @@ function load(){
 }
 
 /* ---------- kişiler ---------- */
-function rowAddr(p){const a=p.addr||(p.pending?'Adres aranıyor…':p.lat.toFixed(5)+', '+p.lng.toFixed(5));return CITY.sides?(p.side==='as'?'Anadolu':'Avrupa')+' · '+a:a;}
+function rowAddr(p){const a=p.addr||(p.pending?'Adres aranıyor…':p.lat.toFixed(5)+', '+p.lng.toFixed(5));return CITY.sides?(p.side==='as'?'Anadolu yakası, ':'Avrupa yakası, ')+a:a;}
 function patchRow(p){const el=$('.person[data-id="'+p.id+'"] .paddr');if(el)el.textContent=rowAddr(p);}
-function patchTimes(){
+/* Yolculuk çubuğu: parça genişliği süreyle orantılıdır, iz uzunluğu en uzun yolculuğa eşittir.
+   Yürüyüş açık dolgu, otobüs taramalı dolgu, hat yolculuğu tam renk. Renge ek olarak etiket ve desen kullanılır. */
+function barHTML(legs,maxT){
+  const total=legs.reduce((s,l)=>s+l.t,0);
+  const segs=legs.map(l=>{
+    const kind=l.kind==='access'?l.mode:'ride';
+    const label=kind==='walk'?'Yürüyüş':kind==='bus'?'Otobüs':l.label;
+    const wide=l.t/maxT>=.17;
+    return '<span class="js '+kind+'" style="flex:'+l.t.toFixed(1)+' 1 0" title="'+esc(label+' '+fmtMin(l.t))+'">'+(wide?'<i>'+esc(label)+'</i>':'')+'</span>';
+  }).join('');
+  return '<div class="jtrack"><div class="jfill" style="width:'+(total/maxT*100).toFixed(1)+'%">'+segs+'</div></div>';
+}
+function patchTrips(){
   const r=state.result,it=r&&r.items[r.selected];
+  const maxT=it?Math.max(...it.times):0;
   state.people.forEach((p,i)=>{
-    const el=$('.person[data-id="'+p.id+'"] .ptime');
-    if(el) el.textContent=it?fmtMin(it.times[i]):'';
+    const row=$('.person[data-id="'+p.id+'"]');
+    if(!row) return;
+    const tEl=$('.ptime',row),trip=$('.trip',row);
+    if(!it||!it.paths){tEl.innerHTML='';trip.hidden=true;trip.innerHTML='';return;}
+    const t=it.times[i];
+    tEl.innerHTML=fmtMin(t)+(state.people.length>1&&t===maxT?'<span class="longest">en uzun</span>':'');
+    trip.hidden=false;
+    trip.innerHTML=barHTML(it.paths[i].legs,maxT)+'<p class="tsum">'+esc(it.paths[i].summary)+'</p>';
   });
 }
 function renderPeople(){
@@ -1413,40 +1622,46 @@ function renderPeople(){
   ol.innerHTML='';
   state.people.forEach((p,i)=>{
     const li=document.createElement('li');
-    li.className='person';li.dataset.id=p.id;
-    li.innerHTML='<span class="pin '+p.side+'">'+(i+1)+'</span>'+
+    li.className='person '+p.side;li.dataset.id=p.id;
+    li.innerHTML='<div class="prow"><span class="pin '+p.side+'">'+(i+1)+'</span>'+
       '<div style="min-width:0"><input class="pname" value="'+esc(p.name)+'" aria-label="'+(i+1)+'. kişinin adı" maxlength="40"><div class="paddr"></div></div>'+
       '<div class="ptime"></div>'+
-      '<button class="x" type="button" aria-label="'+esc(p.name)+' noktasını kaldır">×</button>';
+      '<button class="x" type="button" aria-label="'+esc(p.name)+' noktasını kaldır">×</button></div>'+
+      '<div class="trip" hidden></div>';
     ol.appendChild(li);
     patchRow(p);
   });
   $('#count').textContent=state.people.length;
   $('#empty').hidden=state.people.length>0;
+  $('#lead').hidden=state.people.length>0;
   $('#clearAll').hidden=state.people.length===0;
-  patchTimes();
+  patchTrips();updateReady();
 }
 function drawPeople(){
   peopleLayer.clearLayers();pmarkers.clear();
   state.people.forEach((p,i)=>{
-    const icon=L.divIcon({className:'',html:'<div class="pin '+p.side+'">'+(i+1)+'</div>',iconSize:[28,28],iconAnchor:[14,14]});
+    const icon=L.divIcon({className:'',html:'<div class="pin pin-map '+p.side+'">'+(i+1)+'</div>',iconSize:[32,32],iconAnchor:[16,16]});
     const m=L.marker([p.lat,p.lng],{icon,draggable:true,keyboard:false}).addTo(peopleLayer);
-    m.bindTooltip(esc(p.name),{direction:'top',offset:[0,-12]});
+    m.bindTooltip(esc(p.name),{direction:'top',offset:[0,-14]});
     m.on('dragend',()=>{const ll=m.getLatLng();movePerson(p,ll.lat,ll.lng);});
     pmarkers.set(p.id,m);
   });
 }
 function fit(){
   if(!state.people.length) return;
-  map.fitBounds(L.latLngBounds(state.people.map(p=>[p.lat,p.lng])),{padding:[70,70],maxZoom:14});
+  map.fitBounds(L.latLngBounds(state.people.map(p=>[p.lat,p.lng])),Object.assign({maxZoom:14},padOpts()));
+}
+function refit(){
+  const r=state.result;
+  if(r){const it=r.items[r.selected];map.fitBounds(L.latLngBounds([...state.people.map(p=>[p.lat,p.lng]),[it.lat,it.lng]]),Object.assign({maxZoom:15},padOpts()));}
+  else fit();
 }
 function invalidate(){
   epoch++;
   state.solved=null;state.result=null;
   candLayer.clearLayers();routeLayer.clearLayers();resultLayer.clearLayers();
   $('#resultSec').hidden=true;$('#resultSec').innerHTML='';
-  $('#run').textContent='Buluşma noktasını bul';
-  patchTimes();
+  patchTrips();updateReady();
 }
 async function reverseFill(p){
   p.pending=true;patchRow(p);
@@ -1478,19 +1693,19 @@ function removePerson(id){
 function drawNetwork(){
   netLayer.clearLayers();
   if(!state.lines||!$('#showNet').checked) return;
-  const col=cssVar('--muted'),acc=cssVar('--accent');
+  const col=cssVar('--net');
   state.lines.forEach(ln=>{
     const ferry=ln.m==='ferry';
-    L.polyline(ln.s.map(s=>[s[0],s[1]]),{renderer:canvasR,color:ferry?acc:col,weight:ferry?1.5:2,opacity:ferry?.55:.5,dashArray:ferry?'4 5':null,interactive:false}).addTo(netLayer);
+    L.polyline(ln.s.map(s=>[s[0],s[1]]),{renderer:canvasR,color:col,weight:ferry?1.5:2,opacity:.75,dashArray:ferry?'4 5':null,interactive:false}).addTo(netLayer);
   });
 }
 function drawCands(){
   candLayer.clearLayers();
   if(!state.solved||!$('#showCands').checked) return;
-  const rk=state.solved.ranks[state.mode],col=cssVar('--accent'),nn=rk.length;
+  const rk=state.solved.ranks[state.mode],col=cssVar('--ink-2'),nn=rk.length;
   rk.forEach((c,idx)=>{
     const q=nn>1?idx/(nn-1):0;
-    L.circleMarker([c.lat,c.lng],{renderer:canvasR,radius:4.5,stroke:false,fillColor:col,fillOpacity:.95-.8*q,interactive:false}).addTo(candLayer);
+    L.circleMarker([c.lat,c.lng],{renderer:canvasR,radius:4,stroke:false,fillColor:col,fillOpacity:.85-.7*q,interactive:false}).addTo(candLayer);
   });
 }
 function drawResultMarkers(){
@@ -1500,10 +1715,11 @@ function drawResultMarkers(){
   r.items.forEach((it,i)=>{
     const sel=i===r.selected,letter=String.fromCharCode(65+i);
     const icon=sel
-      ?L.divIcon({className:'',html:'<div class="meet">'+letter+'</div>',iconSize:[36,36],iconAnchor:[18,18]})
-      :L.divIcon({className:'',html:'<div class="alt">'+letter+'</div>',iconSize:[26,26],iconAnchor:[13,13]});
+      ?L.divIcon({className:'',html:'<div class="meet">'+letter+'</div>',iconSize:[44,44],iconAnchor:[22,22]})
+      :L.divIcon({className:'',html:'<div class="alt">'+letter+'</div>',iconSize:[30,30],iconAnchor:[15,15]});
     const m=L.marker([it.lat,it.lng],{icon,keyboard:false,zIndexOffset:sel?1000:500}).addTo(resultLayer);
-    m.bindTooltip(esc(it.name||'Durak'),{direction:'top',offset:[0,sel?-18:-13]});
+    if(sel) m.bindTooltip(esc(it.name||'Durak'),{permanent:true,direction:'bottom',offset:[0,24],className:'mt'});
+    else m.bindTooltip(esc(it.name||'Durak'),{direction:'top',offset:[0,-14]});
     m.on('click',()=>selectItem(i));
   });
 }
@@ -1514,35 +1730,29 @@ function summarize(G,legs){
   legs.slice(1).forEach(l=>{parts.push(l.label);parts.push(hn(l.to));});
   return parts.join(' → ');
 }
+const fmtFrom=s=>{const m=Math.round(s/60);if(m<60)return m+' dakikadan';const h=Math.floor(m/60),r=m%60;return r?h+' saat '+r+' dakikadan':h+' saatten';};
 function renderResult(){
   const sec=$('#resultSec'),r=state.result;
   if(!r){sec.hidden=true;sec.innerHTML='';return;}
   const it=r.items[r.selected],t=it.times,n=t.length;
   const mean=t.reduce((a,b)=>a+b,0)/n,max=Math.max(...t),min=Math.min(...t);
-  const who=state.people[t.indexOf(max)];
   const side=sideOf(it.lat,it.lng),cross=state.people.filter(p=>p.side!==side).length;
   const letter=String.fromCharCode(65+r.selected);
   const coord=it.lat.toFixed(5)+', '+it.lng.toFixed(5);
   const addr=it.addr||(it.addrBusy?'Adres aranıyor…':'');
-  const sub=[it.lines,addr].filter(Boolean).join(' · ');
-  const parts=CITY.sides?[side==='as'?'Anadolu yakası':'Avrupa yakası']:[];
-  if(CITY.sides&&cross) parts.push(cross+' kişi karşı yakadan geliyor');
-  if(who&&n>1) parts.push('en uzun süre '+who.name+' için');
-  const trips=state.people.map((p,i)=>'<li><span class="tn">'+esc(p.name)+'</span><span class="tt">'+fmtMin(t[i])+'</span><span class="ts">'+esc(it.paths?it.paths[i].summary:'')+'</span></li>').join('');
-  const alts=r.items.length>1?'<div><span class="lbl">Diğer seçenekler</span><ul class="alts">'+r.items.map((x,i)=>{
-    const xm=x.times.reduce((a,b)=>a+b,0)/x.times.length,xx=Math.max(...x.times);
-    return '<li><button type="button" data-i="'+i+'"'+(i===r.selected?' aria-current="true"':'')+'><span class="l">'+String.fromCharCode(65+i)+'</span><span><span class="n">'+esc(x.name||'Durak')+'</span><span class="k">'+esc(x.lines)+'</span></span><span class="t">ort. '+fmtMin(xm)+'<br>en uzun '+fmtMin(xx)+'</span></button></li>';
-  }).join('')+'</ul></div>':'';
+  const facts=['Ortalama '+fmtMin(mean)+'. En kısa yolculuk '+fmtMin(min)+', süre farkı '+fmtMin(max-min)+'.'];
+  if(CITY.sides){facts.push((side==='as'?'Anadolu yakasında':'Avrupa yakasında')+(cross?', '+cross+' kişi karşı yakadan geliyor.':'.'));}
+  const alts=r.items.length>1?'<div class="altrow" role="group" aria-label="Diğer seçenekler">'+r.items.map((x,i)=>
+    '<button type="button" data-i="'+i+'"'+(i===r.selected?' aria-current="true"':'')+' title="'+esc((x.name||'Durak')+', en uzun '+fmtMin(Math.max(...x.times)))+'"><span class="l">'+String.fromCharCode(65+i)+'</span><span class="n">'+esc(x.name||'Durak')+'</span></button>').join('')+'</div>':'';
   sec.hidden=false;
-  sec.innerHTML='<span class="lbl">'+(r.selected===0?'Önerilen buluşma koordinatı':'Seçilen koordinat')+'</span>'+
-    '<div class="result">'+
-    '<div class="rtitle"><span class="badge">'+letter+'</span><div><h2>'+esc(it.name||'Durak')+'</h2><p>'+esc(sub)+'</p></div></div>'+
-    '<div class="coordrow"><input id="coord" class="field mono" readonly value="'+coord+'" aria-label="Koordinat"><button class="btn small" id="copyBtn" type="button">Kopyala</button></div>'+
-    '<div class="stats"><div class="stat"><small>Ortalama</small><b>'+fmtMin(mean)+'</b></div><div class="stat"><small>En uzun süre</small><b>'+fmtMin(max)+'</b></div><div class="stat"><small>Süre farkı</small><b>'+fmtMin(max-min)+'</b></div></div>'+
-    '<p class="note">'+esc(parts.join(' · '))+'</p>'+
-    '<div><span class="lbl">Yolculuklar</span><ul class="trips">'+trips+'</ul></div>'+
-    '<a class="btn small" href="https://www.google.com/maps/search/?api=1&query='+it.lat.toFixed(6)+','+it.lng.toFixed(6)+'" target="_blank" rel="noopener">Google Haritalar\'da aç</a>'+
-    alts+'</div>';
+  sec.innerHTML='<article class="result">'+
+    '<h2 class="headline">'+(n>1?'Kimse '+fmtFrom(max)+' fazla yol gitmiyor':esc(it.name||'Durak'))+'</h2>'+
+    '<div class="station"><span class="mk" aria-hidden="true">'+letter+'</span><div><span class="sname">'+esc(it.name||'Durak')+'</span>'+(it.lines?'<span class="slines">'+esc(it.lines)+'</span>':'')+(addr?'<span class="saddr">'+esc(addr)+'</span>':'')+'</div></div>'+
+    '<div class="coordrow"><input id="coord" readonly value="'+coord+'" aria-label="Buluşma koordinatı"><button class="btn sm" id="copyBtn" type="button">Kopyala</button><a class="btn sm plain" href="https://www.google.com/maps/search/?api=1&query='+it.lat.toFixed(6)+','+it.lng.toFixed(6)+'" target="_blank" rel="noopener">Haritalar\'da aç</a></div>'+
+    '<p class="facts">'+esc(facts.join(' '))+'</p>'+
+    alts+
+    '<p class="fine">Tahmini süreler. Otobüsler ortalama hızla hesaplanır, sefer saatleri dikkate alınmaz.</p>'+
+    '</article>';
 }
 async function ensureAddr(it){
   if(it.addr||it.addrBusy) return;
@@ -1552,18 +1762,35 @@ async function ensureAddr(it){
   const r=state.result;
   if(r&&r.items[r.selected]===it) renderResult();
 }
+/* Hat çizgisi başlangıçtan sona doğru çizilir. Tek hareketli an budur, hareketi azalt tercihinde atlanır. */
+function drawIn(layer,delay){
+  if(reduceMotion) return;
+  const el=layer._path;
+  if(!el||!el.getTotalLength) return;
+  try{
+    const len=el.getTotalLength();
+    el.style.transition='none';el.style.strokeDasharray=len+' '+len;el.style.strokeDashoffset=len;
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{el.style.transition='stroke-dashoffset .9s cubic-bezier(.2,.7,.2,1) '+delay+'ms';el.style.strokeDashoffset=0;}));
+    setTimeout(()=>{el.style.strokeDasharray='';el.style.transition='';el.style.strokeDashoffset='';},delay+1000);
+  }catch(e){}
+}
 function showPaths(it){
   routeLayer.clearLayers();
-  const G=state.solved.G;
+  const G=state.solved.G,surf=cssVar('--surface');
   state.people.forEach((p,i)=>{
-    const col=sideColor(p.side),panel=cssVar('--panel');
+    const col=sideColor(p.side);
     it.paths[i].legs.forEach(l=>{
       if(l.kind==='access'){
         const h=G.hubs[l.to];
-        L.polyline([[p.lat,p.lng],[h.lat,h.lng]],{color:col,weight:3,opacity:.85,dashArray:'5 7'}).addTo(routeLayer);
+        const ll=[[p.lat,p.lng],[h.lat,h.lng]];
+        L.polyline(ll,{renderer:svgR,color:surf,weight:7,opacity:.7,lineCap:'round',interactive:false}).addTo(routeLayer);
+        L.polyline(ll,{renderer:svgR,color:col,weight:3.5,opacity:.95,dashArray:'1 7',lineCap:'round',interactive:false}).addTo(routeLayer);
       }else{
-        L.polyline(l.path.map(h=>[G.hubs[h].lat,G.hubs[h].lng]),{color:col,weight:5,opacity:.85}).addTo(routeLayer);
-        [l.from,l.to].forEach(h=>L.circleMarker([G.hubs[h].lat,G.hubs[h].lng],{radius:4,color:col,weight:2,fillColor:panel,fillOpacity:1,interactive:false}).addTo(routeLayer));
+        const ll=l.path.map(h=>[G.hubs[h].lat,G.hubs[h].lng]);
+        L.polyline(ll,{renderer:svgR,color:surf,weight:10,opacity:.75,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
+        const pl=L.polyline(ll,{renderer:svgR,color:col,weight:6,opacity:.95,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
+        drawIn(pl,i*140);
+        [l.from,l.to].forEach(h=>L.circleMarker([G.hubs[h].lat,G.hubs[h].lng],{renderer:svgR,radius:4.5,color:col,weight:2.5,fillColor:surf,fillOpacity:1,interactive:false}).addTo(routeLayer));
       }
     });
   });
@@ -1579,8 +1806,8 @@ function selectItem(i){
       return {legs,summary:summarize(s.G,legs)};
     });
   }
-  drawResultMarkers();renderResult();patchTimes();showPaths(it);
-  map.fitBounds(L.latLngBounds([...state.people.map(p=>[p.lat,p.lng]),[it.lat,it.lng]]),{padding:[70,70],maxZoom:15});
+  drawResultMarkers();renderResult();patchTrips();showPaths(it);
+  refit();
   ensureAddr(it);
 }
 function present(){
@@ -1591,37 +1818,48 @@ function present(){
   state.result={items:top.map(c=>({hub:c.hub,name:c.name,lat:c.lat,lng:c.lng,times:c.times,lines:c.lines})),selected:0,mode};
   drawCands();
   selectItem(0);
+  updateReady();
+}
+function revealResult(){
+  const sec=$('#resultSec');
+  if(sec.hidden) return;
+  pscroll.scrollTop=Math.max(0,pscroll.scrollTop+sec.getBoundingClientRect().top-pscroll.getBoundingClientRect().top-10);
 }
 
 async function run(){
   if(state.running) return;
-  if(state.people.length<2){setStatus('En az iki adres ekle.','err');return;}
+  if(state.people.length<2){setStatus('En az iki adres ekle.','err');$('#q').focus();return;}
   state.running=true;lock(true);invalidate();setStatus('');
   const ep=epoch;
+  if(mobileMQ.matches&&sheet==='peek'){setSheet('half');}
   try{
-    progress(.15,'Toplu taşıma hatları hazırlanıyor. İlk seferde 10-30 sn sürebilir.');
+    if(!state.graph) creep(.08,.62,'Hat verisi indiriliyor. İlk seferde 10-30 sn sürebilir.');
+    else progress(.5,'Hatlar hazır.');
     const G=await ensureGraph();
+    stopCreep();
     if(ep!==epoch) return;
-    progress(.7,'Her kişiden Dijkstra ile aranıyor…');
+    progress(.8,'Her kişiden en kısa yollar aranıyor…');
     await sleep(30);
     const s=solve({people:state.people.map(p=>({id:p.id,lat:p.lat,lng:p.lng,side:p.side})),G,side:state.side});
     if(!s.cands.length) throw new Error('no-candidates');
     state.solved=s;
+    progress(1,'Buluşma noktası bulundu.');
     present();
-    $('#run').textContent='Yeniden hesapla';
+    revealResult();
   }catch(e){
     console.error(e);
     if(ep===epoch) setStatus(errText(e),'err');
   }finally{
-    state.running=false;lock(false);hideProgress();
+    stopCreep();
+    state.running=false;lock(false);hideProgress(450);
   }
 }
 function errText(e){
-  if(e&&e.message==='no-candidates') return 'Tüm kişilerin ulaşabildiği bir durak bulunamadı. Yakayı "Otomatik" yapıp yeniden dene.';
-  return 'Toplu taşıma hatları indirilemedi. Bağlantını kontrol edip yeniden dene.';
+  if(e&&e.message==='no-candidates') return 'Tüm kişilerin ulaşabildiği bir durak bulunamadı. Seçeneklerden yakayı "Otomatik" yapıp yeniden dene.';
+  return 'Hat verisi indirilemedi. Bağlantını kontrol edip "Buluşma noktasını bul" düğmesine yeniden bas.';
 }
 
-/* ---------- arama kutusu ve olaylar ---------- */
+/* ---------- adres kutusu ve olaylar ---------- */
 function hideHits(){$('#hits').hidden=true;$('#hits').innerHTML='';}
 function showHits(hits){
   const ul=$('#hits');ul.innerHTML='';
@@ -1638,6 +1876,11 @@ function pickHit(h){
   hideHits();
   if(p){$('#q').value='';setStatus('');fit();}
 }
+function searchError(err){
+  if(err&&err.message==='outside') return 'Bu koordinat '+CITY.name+' dışında.';
+  if(err&&err.message==='shortlink') return 'Kısa bağlantı açılamıyor. Haritalar\'da bağlantıyı tam adresle aç ya da koordinatı yapıştır.';
+  return 'Adres servisine ulaşılamadı. Bağlantını kontrol edip yeniden dene.';
+}
 $('#addForm').addEventListener('submit',async e=>{
   e.preventDefault();
   const q=$('#q').value.trim();
@@ -1649,15 +1892,20 @@ $('#addForm').addEventListener('submit',async e=>{
     else if(hits.length===1){pickHit(hits[0]);}
     else{showHits(hits);setStatus('');}
   }catch(err){
-    setStatus(err&&err.message==='outside'?'Bu koordinat '+CITY.name+' dışında.':'Adres servisine ulaşılamadı. Bağlantını kontrol edip yeniden dene.','err');
+    setStatus(searchError(err),'err');
   }finally{$('#qBtn').disabled=false;}
 });
-$('#q').addEventListener('keydown',e=>{if(e.key==='Escape')hideHits();});
-$('#bulkGo').addEventListener('click',async()=>{
-  const lines=$('#bulk').value.split('\n').map(s=>s.trim()).filter(Boolean);
+$('#q').addEventListener('input',()=>{if(!$('#q').value) hideHits();});
+/* Çok satırlı yapıştırma doğrudan toplu eklemeye gider */
+$('#q').addEventListener('paste',e=>{
+  const t=((e.clipboardData||window.clipboardData)||{getData(){return '';}}).getData('text')||'';
+  if(/\n/.test(t.trim())){e.preventDefault();bulkAdd(t.split('\n'));}
+});
+async function bulkAdd(raw){
+  const lines=raw.map(s=>s.trim()).filter(Boolean);
   if(!lines.length) return;
   const failed=[];
-  $('#bulkGo').disabled=true;
+  $('#bulkGo').disabled=true;$('#qBtn').disabled=true;
   for(let i=0;i<lines.length;i++){
     setStatus('Adresler ekleniyor… '+(i+1)+'/'+lines.length);
     try{
@@ -1665,11 +1913,18 @@ $('#bulkGo').addEventListener('click',async()=>{
       if(hits[0]) addPerson({lat:hits[0].lat,lng:hits[0].lng,addr:hits[0].sub}); else failed.push(lines[i]);
     }catch(e){failed.push(lines[i]);}
   }
-  $('#bulkGo').disabled=false;
+  $('#bulkGo').disabled=false;$('#qBtn').disabled=false;
   $('#bulk').value=failed.join('\n');
+  if(failed.length){$('#bulkBox').hidden=false;$('#bulkBtn').setAttribute('aria-expanded','true');}
   setStatus(failed.length?failed.length+' adres bulunamadı, kutuda bıraktım.':'Hepsi eklendi.',failed.length?'err':'');
   fit();
+}
+$('#bulkBtn').addEventListener('click',()=>{
+  const box=$('#bulkBox'),open=box.hidden;
+  box.hidden=!open;$('#bulkBtn').setAttribute('aria-expanded',String(open));
+  if(open) $('#bulk').focus();
 });
+$('#bulkGo').addEventListener('click',()=>bulkAdd($('#bulk').value.split('\n')));
 $('#sample').addEventListener('click',()=>{
   CITY.samples.forEach(s=>addPerson({name:s[0],lat:s[1],lng:s[2],addr:'Örnek nokta'}));
   fit();
@@ -1693,25 +1948,35 @@ $('#people').addEventListener('click',e=>{
   if(e.target.closest('.x')){removePerson(id);return;}
   if(e.target.classList.contains('pname')) return;
   const p=state.people.find(x=>x.id===id);
-  if(p) map.flyTo([p.lat,p.lng],Math.max(map.getZoom(),13),{duration:.6});
+  if(p) focusPoint(p.lat,p.lng);
 });
 $('#resultSec').addEventListener('click',e=>{
   const b=e.target.closest('button[data-i]');
   if(b){selectItem(+b.dataset.i);return;}
   if(e.target.closest('#copyBtn')){
     const inp=$('#coord'),btn=$('#copyBtn');
-    const done=()=>{btn.textContent='Kopyalandı';setTimeout(()=>{btn.textContent='Kopyala';},1500);};
+    const done=()=>{btn.textContent='Kopyalandı';setStatus('Koordinat kopyalandı.');setTimeout(()=>{btn.textContent='Kopyala';setStatus('');},1800);};
     const fallback=()=>{inp.focus();inp.select();try{document.execCommand('copy');}catch(err){}done();};
     if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(inp.value).then(done,fallback); else fallback();
   }
 });
 
+/* Haritadan seçme: açıkça başlatılır, Bitti ya da Esc ile kapanır. Böylece harita kaydırırken yanlışlıkla nokta eklenmez. */
+function setPick(on){
+  state.pick=on;
+  $('#pickBtn').setAttribute('aria-pressed',String(on));
+  $('#pickbar').hidden=!on;
+  map.getContainer().classList.toggle('map-add',on);
+  if(on&&mobileMQ.matches){state.sheetBefore=sheet;setSheet('peek');}
+  else if(!on&&state.sheetBefore){setSheet(state.sheetBefore);state.sheetBefore=null;}
+}
+$('#pickBtn').addEventListener('click',()=>setPick(!state.pick));
+$('#pickDone').addEventListener('click',()=>{setPick(false);refit();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(state.pick)setPick(false);hideHits();}});
 map.on('click',e=>{
-  if(!$('#clickAdd').checked) return;
+  if(!state.pick) return;
   addPerson({lat:e.latlng.lat,lng:e.latlng.lng,addr:''});
 });
-function syncCursor(){map.getContainer().classList.toggle('map-add',$('#clickAdd').checked);}
-$('#clickAdd').addEventListener('change',syncCursor);
 
 $$('input[name=side]').forEach(r=>r.addEventListener('change',()=>{
   state.side=r.value;save();
@@ -1729,7 +1994,7 @@ $('#netReload').addEventListener('click',async()=>{
   try{await ensureGraph(true);}catch(e){setStatus(errText(e),'err');}
 });
 $('#run').addEventListener('click',run);
-if(mq.addEventListener) mq.addEventListener('change',()=>{drawCands();drawNetwork();});
+if(mq.addEventListener) mq.addEventListener('change',()=>{drawCands();drawNetwork();if(state.solved&&state.result)showPaths(state.result.items[state.result.selected]);});
 $('#tileRetry').addEventListener('click',()=>{$('#tileTip').hidden=true;useTiles(tileIdx);armTip();});
 TILE_SRC.forEach(s=>{const o=document.createElement('option');o.value=s.id;o.textContent=s.label;$('#base').appendChild(o);});
 $('#base').addEventListener('change',e=>{
@@ -1754,10 +2019,13 @@ $$('input[name=city]').forEach(r=>{
   });
 });
 $('#sideGrp').hidden=!CITY.sides;
+$('#legend').hidden=!CITY.sides;
 $('#lgAs').hidden=!CITY.sides;
-$('#lgEuT').textContent=CITY.sides?'Avrupa':'Kişiler';
 $$('input[name=side]').forEach(r=>{r.checked=r.value===state.side;});
-syncCursor();renderPeople();drawPeople();fit();
+setSheet('half');
+renderPeople();drawPeople();
+offsetView();
+fit();
 useTiles(Math.max(0,TILE_SRC.findIndex(s=>s.id===state.base)));armTip();
 ensureGraph().catch(()=>{});
 })();

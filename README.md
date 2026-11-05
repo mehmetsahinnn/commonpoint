@@ -14,3 +14,13 @@ Tek dosyalı statik uygulamadır (`index.html`, Leaflet gömülü). Sunucu gerek
 Süreler tahmindir (Bursa'da ana ulaşım otobüs olduğu için Bursaray ve tramvay hattından uzak bölgelerde daha kaba): otobüs ve minibüs ortalama hızla hesaplanır, sefer saatleri ve gerçek bekleme süreleri dikkate alınmaz.
 
 Veri: © OpenStreetMap katkıcıları. Adres arama: Nominatim.
+
+## Tasarım
+
+Arayüz renk teorisi ve UX yasalarına göre yeniden tasarlandı.
+
+- Harita tam ekran, panel üstünde yüzer. Mobilde panel alttan açılan bir sayfadır (bottom sheet).
+- Tek vurgu rengi turkuaz (%10). Renk yalnızca veride anlam taşır: mavi Avrupa, turuncu Anadolu. Buluşma noktası renkle değil şekil ve boyutla ayrışır.
+- Metin kontrastı WCAG 4.5:1, işaretler 3:1 üzerindedir. Açık ve koyu tema ayrı seçilmiş değerlerdir, sistem temasını izler.
+- Her yolculuk satırında süre çubuğu vardır, en uzun yolculuk işaretlidir. Renk dışında etiket, desen ve sayı da kullanılır.
+- Seçenekler ve açıklama varsayılan olarak kapalıdır. Adres kutusu adres, koordinat ve Google Haritalar bağlantısını kabul eder.
