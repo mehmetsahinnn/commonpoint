@@ -1,0 +1,18 @@
+data/bursa.json
+  h_23120378202fcd 1
+data/istanbul.json
+  h_23120378202fcd 1
+index.html
+  h_23120378202fcd 1026
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63ffd723e999646a50a5512dcba66302c77cb5ff",
+  "prompts": {},
+  "humans": {
+    "h_23120378202fcd": {
+      "author": "TCMEHMESAHIN <mehmetsahin@turkcell.com.tr>"
+    }
+  }
+}
