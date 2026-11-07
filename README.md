@@ -53,3 +53,9 @@ node tools/build-data.mjs
 Yakın duraklar tek aktarma noktasında birleşir. Bir aktarma noktası raylı durakları için en çok 750 m, otobüs durakları katılınca en çok 450 m yayılabilir, böylece zincirleme birleşme yürüme süresini gizlemez. Nokta, varsa raylı istasyonun adıyla anılır.
 
 Gerçek otobüs ağı varken kişi yalnızca yürüyerek (en çok 1,5 km) bir durağa gider. Otobüs yaklaşık 15 km/s ortalama hız ve 7 dakika bekleme ile hesaplanır. Yakında hiç durak yoksa eski ortalama hızlı otobüs varsayımı yedek olarak kullanılır.
+
+## Lisans
+
+Kod [MIT lisansıyla](LICENSE) yayımlanır.
+
+Bu lisans `data/` altındaki ve `index.html` içine gömülü hat verisini kapsamaz. O veri © OpenStreetMap katkıcılarına aittir ve [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/) altındadır. Veriyi kullanırken ya da yeniden dağıtırken "© OpenStreetMap contributors" atfı gerekir. Gömülü Leaflet kütüphanesi BSD-2-Clause lisanslıdır (© Vladimir Agafonkin, bildirimi `index.html` içinde korunmuştur).
