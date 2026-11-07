@@ -14,6 +14,9 @@
 
   Seçenekler: --city istanbul|bursa|all   --html <dosya>   --out <klasör>   --embed-only   --reorder   --endpoint <url>
   --reorder: indirme yapmadan data/*.json içindeki otobüs duraklarını yolculuk sırasına dizer ve gömer.
+  --geom-only: durak verisini yeniden indirmeden yalnızca hat yollarını (geometri) indirir, data/*.json'a ekler ve gömer.
+  --geom-tol <metre>: hat yollarının sadeleştirme toleransı (varsayılan 5). Büyütmek dosyayı küçültür, çizim biraz kabalaşır.
+  --no-geom: tam indirmede hat yollarını atlar (çizim canlı servislere ya da duraklardan geçen çizgiye düşer).
 */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -50,9 +53,13 @@ const transitQuery = (bb) =>
   `rel["route"="bus"]["name"~"^Metrob",i](${bb});` +
   `rel["route"="bus"]["network"~"Metrob",i](${bb});` +
   `)->.r;.r out body;(${STOP_NODES});out;`;
+/* Hat yolları: ilişkiler (üyelerin sırası ve rolleriyle) ve bu ilişkilerin yolları geometriyle. Her yol bir kez gelir. */
+const geomQuery = (ids) => `[out:json][timeout:180];rel(id:${ids.join(',')})->.r;.r out body;way(r.r);out geom;`;
 const busIdsQuery = (bb) => `[out:json][timeout:180];rel["route"="bus"](${bb});out ids;`;
 const batchQuery = (ids) => `[out:json][timeout:180];rel(id:${ids.join(',')})->.r;.r out body;(${STOP_NODES});out;`;
 
+/* Yalnızca testlerde bekleme sürelerini kısaltmak için (OVERPASS_WAIT_SCALE=0.01). Normalde 1. */
+const WAIT_SCALE = process.env.OVERPASS_WAIT_SCALE === undefined ? 1 : Math.max(0, Number(process.env.OVERPASS_WAIT_SCALE) || 0);
 let endpoints = ENDPOINTS;
 async function overpass(query, tries = 6) {
   let lastErr = null;
@@ -82,7 +89,7 @@ async function overpass(query, tries = 6) {
     } catch (e) {
       clearTimeout(timer);
       lastErr = e;
-      const wait = Math.min(60000, Math.max(e.retryAfter ? e.retryAfter * 1000 : 0, (e.status === 429 ? 15000 : 4000) * (a + 1)));
+      const wait = Math.round(WAIT_SCALE * Math.min(60000, Math.max(e.retryAfter ? e.retryAfter * 1000 : 0, (e.status === 429 ? 15000 : 4000) * (a + 1))));
       log(`  uyarı: ${new URL(ep).host} yanıt vermedi (${e.message}), ${Math.round(wait / 1000)} sn sonra tekrar deneniyor`);
       await sleep(wait);
     }
@@ -201,6 +208,94 @@ export function decode(d) {
   });
 }
 
+/* ---------- hat yolları (geometri) ----------
+   Uygulama yolculuğu hattın kendi yol parçaları üzerinde çizer. İlişki içindeki yol sırası çoğu otobüs hattında karışık olduğundan
+   sıraya güvenilmez: parçalar tek bir tabloda tutulur, hat yalnızca hangi parçalardan oluştuğunu listeler (g). Uygulama parçaları
+   uç noktalarından birbirine bağlar. Aynı yolu kullanan hatlar parçaları paylaşır, bu yüzden tablo küçük kalır. */
+const NOT_ROUTE_WAY = (t) => t.highway === 'platform' || t.railway === 'platform' || t.public_transport === 'platform' || !!t.building;
+export function parseGeom(j) {
+  const ways = new Map();
+  const relWays = new Map();
+  (j.elements || []).forEach((e) => {
+    if (e.type === 'way' && Array.isArray(e.geometry) && e.geometry.length > 1 && !NOT_ROUTE_WAY(e.tags || {})) {
+      ways.set(e.id, e.geometry.filter((g) => g && g.lat != null && g.lon != null).map((g) => [g.lat, g.lon]));
+    }
+  });
+  (j.elements || []).forEach((e) => {
+    if (e.type !== 'relation') return;
+    const ids = [];
+    (e.members || []).forEach((m) => {
+      if (m.type !== 'way' || /^(stop|platform)/.test(m.role || '')) return;
+      if (ways.has(m.ref) && !ids.includes(m.ref)) ids.push(m.ref);
+    });
+    relWays.set(e.id, ids);
+  });
+  return { ways, relWays };
+}
+/* Douglas-Peucker (metre cinsinden sapma). Uçlar korunur. */
+export function simplify(P, tol) {
+  const n = P.length;
+  if (n < 3) return P.slice();
+  const keep = new Uint8Array(n);
+  keep[0] = keep[n - 1] = 1;
+  const stack = [[0, n - 1]];
+  const kx = Math.cos(P[0][0] * Math.PI / 180);
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    const ax = P[a][1] * kx, ay = P[a][0], vx = P[b][1] * kx - ax, vy = P[b][0] - ay, L2 = vx * vx + vy * vy;
+    let md = 0, mi = -1;
+    for (let i = a + 1; i < b; i++) {
+      const wx = P[i][1] * kx - ax, wy = P[i][0] - ay;
+      let t = L2 ? (wx * vx + wy * vy) / L2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = wx - t * vx, dy = wy - t * vy, d = (dx * dx + dy * dy);
+      if (d > md) { md = d; mi = i; }
+    }
+    if (mi >= 0 && Math.sqrt(md) * 111000 > tol) { keep[mi] = 1; stack.push([a, mi], [mi, b]); }
+  }
+  return P.filter((_, i) => keep[i]);
+}
+/* Kodlanmış veriye (encode çıktısı) yol tablosu ve hat başına parça listesi ekler. */
+export function addGeom(data, geom, tol = 5) {
+  const table = [];
+  const idx = new Map();
+  const wayIdx = (wid) => {
+    if (idx.has(wid)) return idx.get(wid);
+    const pts = simplify(geom.ways.get(wid) || [], tol);
+    const f = [];
+    let la = 0, ln = 0, prev = null;
+    pts.forEach((p) => {
+      const a = Math.round(p[0] * 1e5), b = Math.round(p[1] * 1e5);
+      if (prev && prev[0] === a && prev[1] === b) return;
+      f.push(a - la, b - ln);
+      la = a; ln = b; prev = [a, b];
+    });
+    let r = -1;
+    if (f.length >= 4) { r = table.length; table.push(f); }
+    idx.set(wid, r);
+    return r;
+  };
+  let covered = 0;
+  data.lines.forEach((l) => {
+    delete l.g;
+    const ws = geom.relWays.get(l.id);
+    if (!ws || !ws.length) return;
+    const g = [...new Set(ws.map(wayIdx).filter((i) => i >= 0))];
+    if (g.length) { l.g = g; covered++; }
+  });
+  data.ways = table;
+  return { covered, total: data.lines.length, ways: table.length };
+}
+/* encode/decode döngüsünde (örn. --reorder) yol verisi korunur */
+export function keepGeom(oldData, newData) {
+  if (!Array.isArray(oldData.ways)) return newData;
+  const g = new Map();
+  (oldData.lines || []).forEach((l) => { if (l.g) g.set(l.id, l.g); });
+  newData.ways = oldData.ways;
+  newData.lines.forEach((l) => { if (g.has(l.id)) l.g = g.get(l.id); });
+  return newData;
+}
+
 /* ---------- sıkıştırma: enlem, boylam art arda farklarla (1e5 katı), ad sıra numarasıyla ---------- */
 export function encode(city, lines, date) {
   const names = [];
@@ -288,6 +383,43 @@ async function fetchCity(name, cfg) {
   return lines;
 }
 
+async function fetchGeoms(ids) {
+  const ways = new Map(), relWays = new Map();
+  const add = (j) => {
+    const g = parseGeom(j);
+    g.ways.forEach((v, k) => ways.set(k, v));
+    g.relWays.forEach((v, k) => relWays.set(k, v));
+  };
+  const fetchBatch = async (part) => {
+    try { add(await overpass(geomQuery(part), 3)); }
+    catch (e) {
+      if (part.length <= 1) { log(`  uyarı: ${part[0]} numaralı hattın yolları alınamadı (${e.message})`); return; }
+      log(`  ${part.length} hatlık yol grubu indirilemedi, ikiye bölünüyor`);
+      const h = part.length >> 1;
+      await fetchBatch(part.slice(0, h));
+      await fetchBatch(part.slice(h));
+    }
+  };
+  const BATCH = 25;
+  for (let i = 0; i < ids.length; i += BATCH) {
+    await fetchBatch(ids.slice(i, i + BATCH));
+    log(`  yollar ${Math.min(i + BATCH, ids.length)}/${ids.length} (${ways.size} yol parçası)`);
+    await sleep(Math.round(1500 * WAIT_SCALE));
+  }
+  return { ways, relWays };
+}
+async function geomFor(name, data, tol = 5) {
+  log(`\n== ${name}: hat yolları (geometri) indiriliyor, birkaç dakika sürebilir ==`);
+  const ids = data.lines.map((l) => l.id);
+  const g = await fetchGeoms(ids);
+  const st = addGeom(data, g, tol);
+  const kb = Math.round(JSON.stringify(data.ways).length / 1024);
+  log(`Yolu bulunan hat: ${st.covered} / ${st.total}, yol parçası: ${st.ways}, yol tablosu: ${kb} KB (sadeleştirme ${tol} m)`);
+  if (kb > 12000) log('  uyarı: yol tablosu çok büyük, sayfa geç açılabilir. Daha küçük için --geom-tol 10 (metre) ile yeniden dene.');
+  if (st.total > 5 && st.covered < st.total * 0.5) log('  uyarı: hatların yarısından fazlasının yolu alınamadı, uygulama o hatlarda duraklardan geçen çizgi çizer.');
+  return data;
+}
+
 /* ---------- ana akış ---------- */
 function args(argv) {
   const o = { city: 'all', html: null, out: 'data', embedOnly: false, endpoint: null };
@@ -299,6 +431,9 @@ function args(argv) {
     else if (a === '--endpoint') o.endpoint = argv[++i];
     else if (a === '--embed-only') o.embedOnly = true;
     else if (a === '--reorder') { o.embedOnly = true; o.reorder = true; }
+    else if (a === '--geom-only') { o.embedOnly = true; o.geom = true; }
+    else if (a === '--no-geom') o.noGeom = true;
+    else if (a === '--geom-tol') o.geomTol = Math.max(1, Number(argv[++i]) || 5);
     else if (a === '--help' || a === '-h') { log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('*/')[0].replace('#!/usr/bin/env node\n/*', '')); process.exit(0); }
     else { console.error('Bilinmeyen seçenek: ' + a); process.exit(2); }
   }
@@ -318,9 +453,15 @@ async function main() {
     const file = path.join(o.out, c + '.json');
     if (o.embedOnly) {
       let data = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (o.geom) {
+        data = await geomFor(c, data, o.geomTol);
+        fs.writeFileSync(file, JSON.stringify(data));
+        log(`${file} yazıldı (${(fs.statSync(file).size / 1024).toFixed(0)} KB)`);
+      }
       if (o.reorder) {
+        const old = data;
         const fixed = fixOrder(decode(data));
-        data = encode(c, fixed.lines, data.t || date);
+        data = keepGeom(old, encode(c, fixed.lines, data.t || date));
         fs.writeFileSync(file, JSON.stringify(data));
         log(`${c}: durak sırası yeniden dizilen otobüs hattı ${fixed.changed} / ${fixed.buses} (${file} güncellendi)`);
       }
@@ -328,7 +469,8 @@ async function main() {
       continue;
     }
     const lines = await fetchCity(c, CITIES[c]);
-    const data = encode(c, lines, date);
+    let data = encode(c, lines, date);
+    if (!o.noGeom) data = await geomFor(c, data, o.geomTol);
     fs.writeFileSync(file, JSON.stringify(data));
     byCity[c] = data;
     log(`${file} yazıldı (${(fs.statSync(file).size / 1024).toFixed(0)} KB)`);

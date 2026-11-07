@@ -808,6 +808,15 @@ ol,ul{padding:0;list-style:none}
 .js.bus{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--c) 46%,var(--surface)) 0 5px,color-mix(in srgb,var(--c) 26%,var(--surface)) 5px 10px);color:var(--ink)}
 .js.ride{background:var(--c);color:var(--on)}
 .tsum{font-size:13px;color:var(--ink-2);overflow-wrap:anywhere}
+.routebtn{align-self:flex-start;border:0;background:none;color:var(--accent-ink);cursor:pointer;font-weight:700;font-size:13px;padding:8px 0;min-height:40px}
+.routebtn:hover{text-decoration:underline}
+.altlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.altopt{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:44px;padding:6px 12px;border:1.5px solid var(--line-strong);border-radius:10px;background:var(--surface);color:var(--ink);cursor:pointer;text-align:left;font:inherit;font-size:14px}
+.altopt:hover{background:var(--surface-2)}
+.altopt[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink);background:var(--surface-2)}
+.ao-main{font-weight:700;min-width:0;overflow-wrap:anywhere}
+.ao-t{display:flex;align-items:baseline;gap:8px;white-space:nowrap;font-weight:700;font-variant-numeric:tabular-nums}
+.ao-d{font-weight:600;font-size:12px;color:var(--ink-2)}
 .empty{display:flex;flex-direction:column;gap:12px;align-items:flex-start;padding:16px;border:1.5px dashed var(--line-strong);border-radius:14px;color:var(--ink-2)}
 .empty b{color:var(--ink);font:800 17px/1.25 var(--font-display)}
 
@@ -1212,8 +1221,14 @@ function buildGraph(lines){
     }
     return p;
   };
+  const hubPts=new Map();
   lines.forEach((ln,li)=>{
     const mi=metaOf(ln),info=MODE_INFO[ln.m];
+    for(let k=0;k<ln.s.length;k++){
+      const st=stops[start[li]+k],hk=mi+'|'+st.hub;
+      let a=hubPts.get(hk);if(!a){a=[];hubPts.set(hk,a);}
+      if(!a.some(q=>q[0]===st.lat&&q[1]===st.lng)) a.push([st.lat,st.lng]);
+    }
     for(let k=0;k+1<ln.s.length;k++){
       const sa=stops[start[li]+k],sb=stops[start[li]+k+1];
       if(sa.hub===sb.hub) continue;
@@ -1226,7 +1241,7 @@ function buildGraph(lines){
     }
   });
   rideW.forEach(e=>adj[e.u].push({to:e.v,w:e.w,t:2,ln:e.mi}));
-  return {hubs,N,adj,nodeHub,metas,lines,realBus:lines.some(l=>l.m==='bus')};
+  return {hubs,N,adj,nodeHub,metas,lines,hubPts,realBus:lines.some(l=>l.m==='bus')};
 }
 
 class Heap{
@@ -1252,7 +1267,8 @@ class Heap{
   }
 }
 /* Bir kişiden tüm düğümlere en kısa süre (Dijkstra). Kişi her durağa yürüyerek ya da otobüsle gidebilir. */
-function dijkstra(G,person){
+/* ban: yasaklı hat indeksleri (G.metas). Alternatif rota üretmek için o hatlara binilmez. */
+function dijkstra(G,person,ban){
   const N=G.N,dist=new Float64Array(N).fill(Infinity),prev=new Int32Array(N).fill(-1),via=new Array(N).fill(null);
   const heap=new Heap();
   const acc=makeAccess(G,person);
@@ -1261,6 +1277,7 @@ function dijkstra(G,person){
     const top=heap.pop(),d=top[0],u=top[1];
     if(d>dist[u]) continue;
     for(const e of G.adj[u]){
+      if(ban&&e.t!==1&&ban.has(e.ln)) continue;
       const nd=d+e.w;
       if(nd<dist[e.to]){dist[e.to]=nd;prev[e.to]=u;via[e.to]=e;heap.push(nd,e.to);}
     }
@@ -1712,7 +1729,7 @@ function patchTrips(){
     const t=it.times[i];
     tEl.innerHTML=fmtMin(t)+(state.people.length>1&&t===maxT?'<span class="longest">en uzun</span>':'');
     trip.hidden=false;
-    trip.innerHTML=barHTML(it.paths[i].legs,maxT)+'<p class="tsum">'+esc(it.paths[i].summary)+'</p>';
+    trip.innerHTML=barHTML(it.paths[i].legs,maxT)+'<p class="tsum">'+esc(it.paths[i].summary)+'</p>'+altHTML(it,i);
   });
 }
 function renderPeople(){
@@ -1829,6 +1846,80 @@ function summarize(G,legs){
   legs.slice(1).forEach(l=>{parts.push(l.mode==='bus'?'Otobüs '+l.label:l.label);parts.push(hn(l.to));});
   return parts.join(' → ');
 }
+/* ---------- alternatif rotalar ----------
+   Bir kişi için seçilen buluşma noktasına en iyi rota ve ondan farklı rotalar. Farklılık, en iyi rotanın ilk hattını yasaklayıp
+   yeniden aramakla, yalnızca otobüsle ve otobüssüz (raylı, vapur, yürüyüş) arayarak elde edilir. Süreler aynı modelle hesaplanır. */
+const rideKey=legs=>legs.filter(l=>l.kind==='ride').map(l=>l.ln).join(',');
+const rideName=legs=>{const r=legs.filter(l=>l.kind==='ride').map(l=>l.mode==='bus'?'Otobüs '+l.label:l.label);return r.length?r.join(' + '):'Yalnızca yürüyüş';};
+function altRoutes(G,person,hub,base){
+  const out=[],seen=new Set();
+  const add=res=>{
+    if(!isFinite(res.dist[hub])) return null;
+    const legs=legsFor(G,res,hub,person),key=rideKey(legs);
+    if(seen.has(key)) return null;
+    seen.add(key);
+    const o={t:res.dist[hub],legs,summary:summarize(G,legs),name:rideName(legs),key};
+    out.push(o);return o;
+  };
+  const first=add(base);
+  if(!first) return out;
+  /* 1) en iyi rotanın ilk hattı yasaklanır, çıkan rotanın ilk hattı da yasaklanarak devam edilir */
+  let ban=new Set(),cur=first;
+  for(let k=0;k<3&&cur;k++){
+    const r=cur.legs.find(l=>l.kind==='ride');
+    if(!r) break;
+    ban=new Set(ban);ban.add(r.ln);
+    cur=add(dijkstra(G,person,ban));
+  }
+  /* 2) yalnızca otobüs, 3) otobüssüz */
+  const only=pred=>new Set(G.metas.map((m,i)=>pred(m)?i:-1).filter(i=>i>=0));
+  const usesBus=first.legs.some(l=>l.kind==='ride'&&l.mode==='bus'),usesRail=first.legs.some(l=>l.kind==='ride'&&l.mode!=='bus');
+  if(usesRail) add(dijkstra(G,person,only(m=>m.m!=='bus')));
+  if(usesBus) add(dijkstra(G,person,only(m=>m.m==='bus')));
+  const best=out[0].t;
+  const rest=out.slice(1).filter(o=>o.t<=best*2+600).sort((a,b)=>a.t-b.t).slice(0,4);
+  return [out[0]].concat(rest);
+}
+function toggleAlts(i){
+  const r=state.result,s=state.solved;
+  if(!r||!s) return;
+  const it=r.items[r.selected];
+  if(!it.paths) return;
+  it.alt=it.alt||{};
+  let a=it.alt[i];
+  if(!a){
+    const list=altRoutes(s.G,state.people[i],it.hub,s.D[i]);
+    a={list,sel:0,open:true};
+    it.alt[i]=a;
+  }else a.open=!a.open;
+  patchTrips();
+}
+function pickAlt(i,k){
+  const r=state.result;
+  if(!r) return;
+  const it=r.items[r.selected],a=it.alt&&it.alt[i];
+  if(!a||!a.list[k]) return;
+  const o=a.list[k];
+  it.times=it.times.slice();
+  it.times[i]=o.t;
+  it.paths[i]={legs:o.legs,summary:o.summary};
+  a.sel=k;
+  renderResult();patchTrips();showPaths(it,true);
+  refineRoutes(it).catch(()=>{});
+}
+/* Fark, ekranda görünen yuvarlanmış dakikalar üzerinden hesaplanır ki 44 dk ile 47 dk arasında "+4 dk" yazmasın */
+function fmtDelta(t,best){const d=Math.round(t/60)-Math.round(best/60);return d<=0?'aynı süre':'+'+d+' dk';}
+function altHTML(it,i){
+  const a=it.alt&&it.alt[i];
+  const btn='<button type="button" class="routebtn" data-act="alts" aria-expanded="'+(a&&a.open?'true':'false')+'">'+(a&&a.open?'Rotaları gizle':'Rota seç')+'</button>';
+  if(!a||!a.open) return btn;
+  if(a.list.length<2) return btn+'<p class="tsum">Bu nokta için başka rota bulunamadı.</p>';
+  const best=a.list[0].t;
+  return btn+'<ul class="altlist" aria-label="Rota seçenekleri">'+a.list.map((o,k)=>
+    '<li><button type="button" class="altopt" data-act="pick" data-k="'+k+'" aria-pressed="'+(k===a.sel?'true':'false')+'">'+
+    '<span class="ao-main">'+esc(o.name)+'</span>'+
+    '<span class="ao-t">'+fmtMin(o.t)+(k?'<span class="ao-d">'+fmtDelta(o.t,best)+'</span>':'<span class="ao-d">en kısa</span>')+'</span></button></li>').join('')+'</ul>';
+}
 const fmtFrom=s=>{const m=Math.round(s/60);if(m<60)return m+' dakikadan';const h=Math.floor(m/60),r=m%60;return r?h+' saat '+r+' dakikadan':h+' saatten';};
 function renderResult(){
   const sec=$('#resultSec'),r=state.result;
@@ -1879,26 +1970,51 @@ const geomCache=new Map(),roadCache=new Map();
 let routeTok=0,geomRetryAt=0;
 const dm=(a,b)=>hav({lat:a[0],lng:a[1]},{lat:b[0],lng:b[1]});
 const KX=0.76; /* enlem 41° civarında boylam derecesinin enlem derecesine oranı */
-/* Bir hat ilişkisinin yollarını sırayla uç uca ekleyip tek çizgi yapar. Kopukluklar gaps içinde tutulur. */
-function chainWays(rel){
-  const ways=(rel.members||[]).filter(m=>m.type==='way'&&Array.isArray(m.geometry)&&m.geometry.length>1&&!/^(stop|platform)/.test(m.role||''))
-    .map(m=>m.geometry.map(g=>[g.lat,g.lon]));
-  if(!ways.length) return null;
-  const P=ways[0].slice(),gaps=[];
-  if(ways.length>1){
-    const n=ways[1],e=pt=>Math.min(dm(pt,n[0]),dm(pt,n[n.length-1]));
-    if(e(P[0])<e(P[P.length-1])) P.reverse();
-  }
-  for(let k=1;k<ways.length;k++){
-    const w=ways[k],t=P[P.length-1],d0=dm(t,w[0]),d1=dm(t,w[w.length-1]);
-    const fwd=d0<=d1,w2=fwd?w:w.slice().reverse(),d=fwd?d0:d1;
-    if(d>25) gaps.push([P.length,d]);
-    for(let i=d<=25?1:0;i<w2.length;i++) P.push(w2[i]);
-  }
-  return P.length>1?{P,gaps}:null;
+/* Hattın yol parçaları: gömülü veriden (ways + hat.g) ya da canlı Overpass'tan. Parçalar hat başına bir ağ olarak kurulur ve
+   yolculuk, hattın kendi durakları arasında bu ağ üzerinde en kısa yolla çizilir. OSM'de ilişki içindeki yol sırası çoğu hatta
+   karışık olduğu için sıraya güvenilmez, parçalar uç noktalarından birbirine bağlanır. */
+const EGEO={}; /* şehir kimliği → {ways: indeks→çözülmüş yol, idx: hat kimliği→parça listesi}; şehir değişince karışmasın */
+function decodeWay(a){
+  const out=[];let la=0,ln=0;
+  for(let i=0;i+1<a.length;i+=2){la+=a[i];ln+=a[i+1];out.push([la/1e5,ln/1e5]);}
+  return out.length>1?out:null;
+}
+function embeddedWays(id){
+  const d=EMBED[CITY.id];
+  if(!d||!Array.isArray(d.ways)) return null;
+  let E=EGEO[CITY.id];
+  if(!E||E.src!==d){E=EGEO[CITY.id]={src:d,ways:new Map(),idx:new Map()};(d.lines||[]).forEach(l=>{if(Array.isArray(l.g)&&l.g.length)E.idx.set(l.id,l.g);});}
+  const g=E.idx.get(id);
+  if(!g) return null;
+  const out=[];
+  g.forEach(wi=>{
+    let w=E.ways.get(wi);
+    if(w===undefined){w=d.ways[wi]?decodeWay(d.ways[wi]):null;E.ways.set(wi,w);}
+    if(w) out.push(w);
+  });
+  return out.length?out:null;
+}
+const haveGeom=id=>geomCache.has(id)||!!embeddedWays(id);
+function getGeom(id){
+  if(geomCache.has(id)) return geomCache.get(id);
+  const w=embeddedWays(id);
+  if(!w) return null;
+  const g={ways:w,graph:null};
+  geomCache.set(id,g);
+  return g;
+}
+function waysOfRelation(rel){
+  const out=[];
+  (rel.members||[]).forEach(m=>{
+    if(m.type!=='way'||!Array.isArray(m.geometry)||m.geometry.length<2||/^(stop|platform)/.test(m.role||'')) return;
+    out.push(m.geometry.map(g=>[g.lat,g.lon]));
+  });
+  return out.length?out:null;
 }
 async function loadGeoms(ids){
-  const q='[out:json][timeout:50];rel(id:'+ids.join(',')+');out geom;';
+  const need=ids.filter(id=>!haveGeom(id));
+  if(!need.length) return;
+  const q='[out:json][timeout:50];rel(id:'+need.join(',')+');out geom;';
   let j=null;
   for(const ep of OVERPASS){
     try{
@@ -1908,46 +2024,109 @@ async function loadGeoms(ids){
     }catch(e){j=null;}
   }
   if(!j){geomRetryAt=Date.now()+60000;return;}
-  ids.forEach(id=>geomCache.set(id,null));
-  j.elements.forEach(e=>{if(e.type==='relation')geomCache.set(e.id,chainWays(e));});
+  need.forEach(id=>geomCache.set(id,null));
+  j.elements.forEach(e=>{if(e.type==='relation'){const w=waysOfRelation(e);geomCache.set(e.id,w?{ways:w,graph:null}:null);}});
 }
-/* Çizgi üzerinde q noktasına en yakın nokta: segment sırası, segment içi oran, uzaklık (m) */
-function snapTo(P,q){
-  let bi=0,bt=0,bd=Infinity;
-  const px=q[0],py=q[1]*KX;
-  for(let i=0;i+1<P.length;i++){
-    const ax=P[i][0],ay=P[i][1]*KX,vx=P[i+1][0]-ax,vy=P[i+1][1]*KX-ay,L2=vx*vx+vy*vy;
-    let t=L2?((px-ax)*vx+(py-ay)*vy)/L2:0;t=t<0?0:t>1?1:t;
-    const dx=ax+t*vx-px,dy=ay+t*vy-py,d=dx*dx+dy*dy;
-    if(d<bd){bd=d;bi=i;bt=t;}
+function buildLineGraph(ways){
+  const vid=new Map(),V=[],adj=[],segs=[];
+  const vert=p=>{const k=Math.round(p[0]*1e5)+','+Math.round(p[1]*1e5);let i=vid.get(k);if(i===undefined){i=V.length;vid.set(k,i);V.push(p);adj.push([]);}return i;};
+  ways.forEach(w=>{
+    let prev=vert(w[0]);
+    for(let i=1;i<w.length;i++){
+      const b=vert(w[i]);
+      if(b===prev) continue;
+      const d=dm(V[prev],V[b]);
+      adj[prev].push([b,d]);adj[b].push([prev,d]);segs.push([prev,b]);prev=b;
+    }
+  });
+  return {V,adj,segs};
+}
+/* q noktasının yol parçalarına en yakın izdüşümü */
+function snapSeg(gr,q){
+  const V=gr.V,segs=gr.segs,kx=Math.cos(q[0]*Math.PI/180);
+  let bs=-1,bt=0,bd=Infinity;
+  for(let s=0;s<segs.length;s++){
+    const A=V[segs[s][0]],B=V[segs[s][1]];
+    const vx=(B[1]-A[1])*kx,vy=B[0]-A[0],wx=(q[1]-A[1])*kx,wy=q[0]-A[0],L2=vx*vx+vy*vy;
+    let t=L2?(wx*vx+wy*vy)/L2:0;t=t<0?0:t>1?1:t;
+    const dx=wx-t*vx,dy=wy-t*vy,d=dx*dx+dy*dy;
+    if(d<bd){bd=d;bs=s;bt=t;}
   }
-  return {i:bi,t:bt,pos:bi+bt,d:Math.sqrt(bd)*111000};
+  if(bs<0) return null;
+  const A=V[segs[bs][0]],B=V[segs[bs][1]];
+  return {s:bs,t:bt,p:[A[0]+bt*(B[0]-A[0]),A[1]+bt*(B[1]-A[1])],d:Math.sqrt(bd)*111000};
 }
-/* Yolculuğun duraklarını (sırayla) hat çizgisine oturtur ve aradaki parçayı keser. Uymazsa null döner. */
-function sliceOne(g,pts){
-  const P=g.P,sn=[];let err=0;
-  for(const q of pts){const s=snapTo(P,q);if(s.d>450) return null;sn.push(s);err+=s.d;}
-  const a=sn[0],b=sn[sn.length-1];
-  if(Math.abs(b.pos-a.pos)<1e-6) return null;
-  const inc=b.pos>a.pos;
-  for(let k=1;k<sn.length;k++) if(inc?sn[k].pos<sn[k-1].pos-1e-9:sn[k].pos>sn[k-1].pos+1e-9) return null;
-  const lo=inc?a:b,hi=inc?b:a;
-  for(const [gi,gd] of g.gaps) if(gd>600&&gi-1>=lo.i&&gi-1<=hi.i) return null;
-  const at=s=>[P[s.i][0]+s.t*(P[s.i+1][0]-P[s.i][0]),P[s.i][1]+s.t*(P[s.i+1][1]-P[s.i][1])];
-  const mid=P.slice(lo.i+1,hi.i+1);
-  let ll=[at(lo)].concat(mid,[at(hi)]);
-  if(!inc) ll=ll.reverse();
-  return {ll,err};
+/* İki izdüşüm noktası arasında yol parçaları üzerinde en kısa yol (Dijkstra) */
+function pathBetween(gr,a,b){
+  if(a.s===b.s) return [a.p,b.p];
+  const V=gr.V,adj=gr.adj,n=V.length,S=n,T=n+1,extra=new Map();
+  const addE=(v,to,w)=>{let l=extra.get(v);if(!l){l=[];extra.set(v,l);}l.push([to,w]);};
+  [[gr.segs[a.s],a,S],[gr.segs[b.s],b,T]].forEach(x=>x[0].forEach(v=>{const w=dm(x[1].p,V[v]);addE(x[2],v,w);addE(v,x[2],w);}));
+  const dist=new Float64Array(n+2).fill(Infinity),prev=new Int32Array(n+2).fill(-1),heap=new Heap();
+  dist[S]=0;heap.push(0,S);
+  while(heap.size){
+    const top=heap.pop(),d=top[0],u=top[1];
+    if(d>dist[u]) continue;
+    if(u===T) break;
+    const relax=(to,w)=>{const nd=d+w;if(nd<dist[to]){dist[to]=nd;prev[to]=u;heap.push(nd,to);}};
+    if(u<n) adj[u].forEach(e=>relax(e[0],e[1]));
+    const ex=extra.get(u);
+    if(ex) ex.forEach(e=>relax(e[0],e[1]));
+  }
+  if(!isFinite(dist[T])) return null;
+  const out=[];
+  for(let u=T;u!==-1;u=prev[u]) out.push(u===S?a.p:u===T?b.p:V[u]);
+  return out.reverse();
+}
+const SNAP_MAX=250;
+/* Ardışık duraklar arasını hattın yol parçalarında bulur. Bulunamayan çift düz çizgi olur. Döner: çizgi ve başarı oranı */
+function routeAlong(g,pts){
+  const gr=g.graph||(g.graph=buildLineGraph(g.ways));
+  if(!gr.segs.length||pts.length<2) return null;
+  const sn=pts.map(q=>snapSeg(gr,q));
+  const out=[];let ok=0,len=0;
+  for(let k=0;k+1<pts.length;k++){
+    const a=sn[k],b=sn[k+1],straight=dm(pts[k],pts[k+1]);
+    let seg=null;
+    if(a&&b&&a.d<=SNAP_MAX&&b.d<=SNAP_MAX){
+      seg=pathBetween(gr,a,b);
+      if(seg&&lineLen(seg)>3*straight+400) seg=null;
+    }
+    if(seg) ok++; else seg=[pts[k],pts[k+1]];
+    if(k===0||seg===null) {}
+    for(let i=out.length?1:0;i<seg.length;i++) out.push(seg[i]);
+    len+=lineLen(seg);
+  }
+  /* Uçlar durağın kendisine bağlanır */
+  if(dm(out[0],pts[0])>3) out.unshift(pts[0]);
+  if(dm(out[out.length-1],pts[pts.length-1])>3) out.push(pts[pts.length-1]);
+  return {ll:out,frac:ok/(pts.length-1),len};
+}
+/* Hattın kendi durakları: yolculuğun her aktarma noktası için hattın o noktadaki durağı (komşu noktaya en yakın olan) */
+function legPoints(G,l){
+  const out=[];
+  l.path.forEach((h,i)=>{
+    const c=G.hubPts&&G.hubPts.get(l.ln+'|'+h);
+    let p;
+    if(c&&c.length===1) p=c[0];
+    else if(c&&c.length){
+      const nx=i+1<l.path.length?G.hubs[l.path[i+1]]:null;
+      const ref=out.length?out[out.length-1]:nx?[nx.lat,nx.lng]:null;
+      p=ref?c.reduce((x,y)=>dm(y,ref)<dm(x,ref)?y:x):c[0];
+    }else p=[G.hubs[h].lat,G.hubs[h].lng];
+    out.push(p);
+  });
+  return out;
 }
 function legGeometry(G,l){
-  const pts=l.path.map(h=>[G.hubs[h].lat,G.hubs[h].lng]);
+  const pts=legPoints(G,l);
   let best=null;
   for(const id of (G.metas[l.ln].ids||[])){
-    const g=geomCache.get(id);if(!g) continue;
-    const r=sliceOne(g,pts);
-    if(r&&(!best||r.err<best.err)) best=r;
+    const g=getGeom(id);if(!g) continue;
+    const r=routeAlong(g,pts);
+    if(r&&(!best||r.frac>best.frac+1e-9||(Math.abs(r.frac-best.frac)<1e-9&&r.len<best.len))) best=r;
   }
-  return best?best.ll:null;
+  return best&&best.frac>=.8?best.ll:null;
 }
 const roadKey=(a,b)=>a[0].toFixed(5)+','+a[1].toFixed(5)+'>'+b[0].toFixed(5)+','+b[1].toFixed(5);
 const lineLen=ll=>{let t=0;for(let i=0;i+1<ll.length;i++)t+=dm(ll[i],ll[i+1]);return t;};
@@ -1987,7 +2166,7 @@ async function fetchRoadVia(pts){
     if(lineLen(ll)<=Math.max(2.5*lineLen(pts),300)) roadCache.set(k,ll);
   }catch(e){}
 }
-function busStops(G,l){return l.path.map(h=>[G.hubs[h].lat,G.hubs[h].lng]);}
+const busStops=legPoints;
 function busLegRoad(G,l){
   if(l.mode!=='bus') return null;
   const parts=chunksOf(busStops(G,l));
@@ -2029,7 +2208,7 @@ function showPaths(it,still){
         L.polyline(ll,{renderer:svgR,color:col,weight:3.5,opacity:.95,dashArray:'1 7',lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
         if(l.mode==='bus') tag(midOf(ll),'Otobüs (tahmini)',col);
       }else{
-        const ll=legGeometry(G,l)||busLegRoad(G,l)||busStops(G,l);
+        const ll=legGeometry(G,l)||busLegRoad(G,l)||legPoints(G,l);
         L.polyline(ll,{renderer:svgR,color:surf,weight:10,opacity:.75,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
         const pl=L.polyline(ll,{renderer:svgR,color:col,weight:6,opacity:.95,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
         if(!still) drawIn(pl,i*140);
@@ -2045,7 +2224,7 @@ async function refineRoutes(it){
   if(!G||!it.paths) return;
   const tok=++routeTok,ids=new Set(),roads=[];
   state.people.forEach((p,i)=>it.paths[i].legs.forEach(l=>{
-    if(l.kind==='ride'){(G.metas[l.ln].ids||[]).forEach(id=>{if(!geomCache.has(id))ids.add(id);});}
+    if(l.kind==='ride'){(G.metas[l.ln].ids||[]).forEach(id=>{if(!haveGeom(id))ids.add(id);});}
     else if(l.mode==='bus'){
       const h=G.hubs[l.to];
       if(p.side===h.side){const a=[p.lat,p.lng],b=[h.lat,h.lng];if(!roadCache.has(roadKey(a,b)))roads.push([a,b]);}
@@ -2227,6 +2406,13 @@ $('#people').addEventListener('click',e=>{
   const row=e.target.closest('.person');
   if(!row) return;
   const id=+row.dataset.id;
+  const act=e.target.closest('[data-act]');
+  if(act){
+    const pi=state.people.findIndex(x=>x.id===id);
+    if(act.dataset.act==='alts') toggleAlts(pi);
+    else if(act.dataset.act==='pick') pickAlt(pi,+act.dataset.k);
+    return;
+  }
   if(e.target.closest('.x')){removePerson(id);return;}
   if(e.target.classList.contains('pname')) return;
   const p=state.people.find(x=>x.id===id);

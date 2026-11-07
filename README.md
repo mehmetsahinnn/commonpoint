@@ -8,6 +8,7 @@
 - Her kişiden Dijkstra algoritması çalışır: yürüyüş veya otobüsle bir durağa erişim, sonra hatlar üzerinde aktarmalı en kısa süre.
 - Tek ölçüt: herkesin en uzun yolculuğu en kısa olan durak seçilir (minimax). Toplam süre hedeflenmez.
 - Sonuç mekan değil koordinattır. Araç yoktur, Avrasya Tüneli kullanılmaz.
+- Sonuçtan sonra her kişinin satırında "Rota seç" vardır: aynı buluşma noktasına başka bir otobüs ya da raylı hatla gitmenin alternatifleri süre farkıyla listelenir. Seçilen rota haritada çizilir, kişinin süresi ve en uzun yolculuk işareti buna göre güncellenir. Seçim yalnızca o kişinin gösterilen rotasını değiştirir, buluşma noktası aynı kalır.
 
 Tek dosyalı statik uygulamadır (`index.html`, Leaflet gömülü). Sunucu gerekmez.
 
@@ -39,10 +40,11 @@ node tools/build-data.mjs
 - OpenStreetMap'ten metro, Marmaray, tramvay, füniküler, vapur, Metrobüs ve İstanbul için tüm otobüs hatlarını indirir. İstanbul'da yaklaşık 1700 otobüs hattı olduğu için birkaç dakika sürebilir.
 - `data/istanbul.json` ve `data/bursa.json` dosyalarını yazar ve `index.html` içine gömer. Sonra commit edip pushlaman yeterli.
 - OpenStreetMap'te İstanbul otobüs hatlarının yaklaşık %79'unda durak üyeleri yolculuk sırasında değil karışık sırada tutuluyor. Betik bu hatların duraklarını aralarındaki toplam yol en kısa olacak şekilde yeniden dizer (raylı hatlara dokunmaz). İndirme yapmadan yalnızca bunu uygulamak için: `node tools/build-data.mjs --reorder`.
-- Otobüs yolculukları haritada hattın kendi duraklarından geçip yol üzerinde çizilir (yol servisi alınamazsa duraklardan geçen kırık çizgi). Çizim süreyi etkilemez.
+- Yolculuklar haritada hattın kendi yol parçaları üzerinde çizilir. Bu yol verisi (`--geom-only` ile indirilir) `index.html` içine gömülüdür, çizim için canlı servis gerekmez. Veri gömülü değilse ya da bir hattın yolu yoksa uygulama sırayla canlı Overpass'tan hat yolunu, sonra OSRM yol servisini dener, o da olmazsa duraklardan geçen kırık çizgi çizer. Çizim süreyi etkilemez.
+- Yol verisi: `--geom-only` durak verisine dokunmadan yalnızca yolları indirir (birkaç dakika sürer), `data/*.json` dosyalarına `ways` tablosunu ve her hatta `g` (hangi yol parçalarından oluştuğu) alanını ekler. Yol parçaları hatlar arasında paylaşılır, Douglas-Peucker ile varsayılan 5 m toleransla sadeleştirilir; `--geom-tol 10` dosyayı küçültür. Tam indirmede yollar da iner, atlamak için `--no-geom`. `--reorder` yol verisini korur.
 - Bursa'da OpenStreetMap'te yalnızca 17 otobüs hattı var, eksik ağ sonucu bozacağı için otobüs alınmaz. Orada otobüs ortalama hızla hesaplanır.
 - Overpass kimliksiz istekleri reddeder (HTTP 406), betik bu yüzden `ortak-nokta-data/1.0` User-Agent'ı gönderir. Başka bir ad vermek için `OVERPASS_UA="adın (iletişim)" node tools/build-data.mjs`. HTTP 429 sunucunun yoğun olduğu anlamına gelir, betik bekleyip yeniden dener.
-- Seçenekler: `--city istanbul`, `--embed-only` (indirme yok, `data/` dosyalarını gömer), `--html <dosya>`.
+- Seçenekler: `--city istanbul`, `--embed-only` (indirme yok, `data/` dosyalarını gömer), `--html <dosya>`, `--geom-only`, `--geom-tol <metre>`, `--no-geom`, `--reorder`.
 
 Yakın duraklar tek aktarma noktasında birleşir. Bir aktarma noktası raylı durakları için en çok 750 m, otobüs durakları katılınca en çok 450 m yayılabilir, böylece zincirleme birleşme yürüme süresini gizlemez. Nokta, varsa raylı istasyonun adıyla anılır.
 
