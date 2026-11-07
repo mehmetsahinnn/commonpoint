@@ -8,7 +8,9 @@
 - Her kişiden Dijkstra algoritması çalışır: yürüyüş veya otobüsle bir durağa erişim, sonra hatlar üzerinde aktarmalı en kısa süre.
 - Tek ölçüt: herkesin en uzun yolculuğu en kısa olan durak seçilir (minimax). Toplam süre hedeflenmez.
 - Sonuç mekan değil koordinattır. Araç yoktur, Avrasya Tüneli kullanılmaz.
-- Sonuçtan sonra her kişinin satırında "Rota seç" vardır: aynı buluşma noktasına başka bir otobüs ya da raylı hatla gitmenin alternatifleri süre farkıyla listelenir. Seçilen rota haritada çizilir, kişinin süresi ve en uzun yolculuk işareti buna göre güncellenir. Seçim yalnızca o kişinin gösterilen rotasını değiştirir, buluşma noktası aynı kalır.
+- Sonuçta her kişi ayrı bir kart olarak listelenir (süre çubuğu, en uzun yolculuk işareti, aktarma sayısı). Karta tıklayınca tüm adımlar açılır: yürüyüş, her biniş, aktarma ve iniş. Her hat bacağı farklı bir renkle gösterilir; aynı renk süre çubuğunda, adım listesindeki numarada ve haritadaki çizgide kullanılır (6 renklik, açık ve koyu temada ayrı doğrulanmış palet). Renk tek başına taşıyıcı değildir, adımlar numaralı ve hat adı etiketlidir. Aynı anda tek kart açıktır; açılınca harita o kişinin rotasına odaklanır, diğer kişilerin rotaları soluk çizilir. Kartı yeniden tıklayınca ya da "Adımları gizle" düğmesiyle kapanır ve tüm rotalar yeniden tam çizilir.
+- Açık kartta "Rota seç" vardır: aynı buluşma noktasına başka bir otobüs ya da raylı hatla gitmenin alternatifleri süre farkıyla listelenir. Seçilen rota haritada çizilir, kişinin süresi ve en uzun yolculuk işareti buna göre güncellenir. Seçim yalnızca o kişinin gösterilen rotasını değiştirir, buluşma noktası aynı kalır.
+- Raylı ağın soluk taban çizgisi de gömülü yol verisi varsa gerçek güzergâhla çizilir, yoksa duraktan durağa düz çizgidir.
 - Haritada çizilen rotanın her durağı bir noktayla işaretlidir. Noktaya tıklayınca hattın kendi durak adı, hat ve biniş, iniş ya da ara durak bilgisi açılır.
 
 Tek dosyalı statik uygulamadır (`index.html`, Leaflet gömülü). Sunucu gerekmez.

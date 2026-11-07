@@ -682,6 +682,9 @@ svg.leaflet-image-layer.leaflet-interactive path {
   --accent:#0B7A75; --accent-ink:#075A57;
   --eu:#2468C0; --as:#B84D08; --on-eu:#FFFFFF; --on-as:#FFFFFF;
   --net:#8A99A8; --danger:#A8261E;
+  /* Yolculuk adımları: 1. hat, 2. hat... sırayla. Ardışık çiftler renk körlüğünde de ayrışır (doğrulandı), renk tek başına taşıyıcı değildir: adımlar numaralı ve adlıdır. */
+  --l1:#6250d6; --l2:#0e9f78; --l3:#a56400; --l4:#c2306f; --l5:#2469c4; --l6:#d03a3a;
+  --on-l1:#FFFFFF; --on-l2:#0E2433; --on-l3:#FFFFFF; --on-l4:#FFFFFF; --on-l5:#FFFFFF; --on-l6:#FFFFFF;
   --shadow-panel:0 8px 32px rgba(14,36,51,.18),0 1px 3px rgba(14,36,51,.12);
   --shadow-mark:0 1px 4px rgba(14,36,51,.45);
   --font-display:"Red Hat Display","Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -696,6 +699,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
     --accent:#3FC4B8; --accent-ink:#6FD8CE;
     --eu:#3987E5; --as:#D95926; --on-eu:#08121B; --on-as:#08121B;
     --net:#6F8294; --danger:#FF8A80;
+    --l1:#9085e9; --l2:#199e70; --l3:#c98500; --l4:#d55181; --l5:#3987e5; --l6:#e66767;
+    --on-l1:#08121B; --on-l2:#08121B; --on-l3:#08121B; --on-l4:#08121B; --on-l5:#08121B; --on-l6:#08121B;
     --shadow-panel:0 8px 32px rgba(0,0,0,.55),0 1px 3px rgba(0,0,0,.5);
     --shadow-mark:0 1px 5px rgba(0,0,0,.7);
     color-scheme:dark;
@@ -777,10 +782,12 @@ ol,ul{padding:0;list-style:none}
 .sechead h2{font:800 17px/1.2 var(--font-display)}
 .count{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 7px;border-radius:99px;background:var(--surface-2);font-size:13px;font-weight:700;margin-left:6px;font-variant-numeric:tabular-nums}
 .sechead .link{margin-left:auto}
-.people{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.people{display:flex;flex-direction:column;gap:10px}
 .people:empty{display:none}
-.person{padding:10px 8px 10px 12px;background:var(--surface)}
-.person+.person{border-top:1px solid var(--line)}
+/* Her kişi bir kart. Tıklayınca adımlar açılır ve harita o kişinin rotasına odaklanır. */
+.person{padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 2px rgba(14,36,51,.07)}
+.person:hover{border-color:var(--line-strong)}
+.person.open{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink),0 2px 8px rgba(14,36,51,.12)}
 .person.eu{--c:var(--eu);--on:var(--on-eu)}
 .person.as{--c:var(--as);--on:var(--on-as)}
 .prow{display:grid;grid-template-columns:30px minmax(0,1fr) auto 40px;gap:10px;align-items:center;cursor:pointer}
@@ -797,17 +804,34 @@ ol,ul{padding:0;list-style:none}
 .longest{font:700 11px/1 var(--font-body);padding:3px 6px;border-radius:99px;background:var(--ink);color:var(--surface)}
 .x{width:40px;height:40px;border:0;border-radius:8px;background:none;color:var(--ink-3);cursor:pointer;font-size:22px;line-height:1}
 .x:hover{background:var(--surface-2);color:var(--danger)}
-.trip{margin:8px 0 0 40px;padding-right:48px;display:flex;flex-direction:column;gap:6px}
+.trip{margin:10px 0 0;display:flex;flex-direction:column;gap:6px}
 .jtrack{height:24px;border-radius:6px;background:var(--surface-2);overflow:hidden}
 .jfill{height:100%;display:flex;gap:2px}
 .js{display:flex;align-items:center;justify-content:center;min-width:3px;overflow:hidden;white-space:nowrap;font-size:11px;font-weight:700;border-radius:3px}
 .js i{font-style:normal;padding:0 4px}
 .js:first-child{border-radius:6px 3px 3px 6px}
 .js:last-child{border-radius:3px 6px 6px 3px}
-.js.walk{background:color-mix(in srgb,var(--c) 20%,var(--surface));color:var(--ink)}
-.js.bus{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--c) 46%,var(--surface)) 0 5px,color-mix(in srgb,var(--c) 26%,var(--surface)) 5px 10px);color:var(--ink)}
-.js.ride{background:var(--c);color:var(--on)}
+.js.walk{background:color-mix(in srgb,var(--ink) 12%,var(--surface));color:var(--ink)}
+.js.bus{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--lc) 46%,var(--surface)) 0 5px,color-mix(in srgb,var(--lc) 26%,var(--surface)) 5px 10px);color:var(--ink)}
+.js.ride{background:var(--lc);color:var(--onlc)}
 .tsum{font-size:13px;color:var(--ink-2);overflow-wrap:anywhere}
+.stepbtn{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:2px 0;border:0;background:none;color:var(--accent-ink);cursor:pointer;font-weight:700;font-size:13px;text-align:left}
+.stepbtn:hover .sbl{text-decoration:underline}
+.stepbtn .chev{margin-left:auto;flex:none;transition:transform .15s}
+.stepbtn[aria-expanded="true"] .chev{transform:rotate(180deg)}
+.tchip{display:inline-block;padding:2px 9px;border-radius:99px;background:var(--surface-2);color:var(--ink);font-size:12px;font-weight:700;white-space:nowrap}
+.steps{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column}
+.step{display:grid;grid-template-columns:26px minmax(0,1fr);gap:10px;position:relative;padding-bottom:12px}
+.step:last-child{padding-bottom:2px}
+.step::before{content:"";position:absolute;left:11.5px;top:28px;bottom:2px;width:3px;border-radius:2px;background:var(--lc,var(--line-strong))}
+.step.walk::before{width:0;background:none;border-left:3px dotted var(--line-strong)}
+.step:last-child::before{display:none}
+.snum{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--lc);color:var(--onlc);font:800 13px/1 var(--font-display)}
+.step.walk .snum{background:var(--surface-2);border:2px dotted var(--line-strong)}
+.sbody{min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;padding-top:2px}
+.sbody b{font-weight:800;font-size:14px}
+.sbody .tchip{font-size:11px;padding:1px 7px}
+.sm{flex-basis:100%;color:var(--ink-2);font-size:13px;overflow-wrap:anywhere}
 .routebtn{align-self:flex-start;border:0;background:none;color:var(--accent-ink);cursor:pointer;font-weight:700;font-size:13px;padding:8px 0;min-height:40px}
 .routebtn:hover{text-decoration:underline}
 .altlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
@@ -1461,7 +1485,7 @@ async function reverse(lat,lng){
 }
 
 /* ---------- hat verisi (Overpass) ---------- */
-const state={people:[],side:'auto',mode:'max',base:'osm',lines:null,graph:null,solved:null,result:null,running:false,pick:false,sheetBefore:null};
+const state={people:[],side:'auto',mode:'max',base:'osm',lines:null,graph:null,solved:null,result:null,running:false,pick:false,sheetBefore:null,open:null};
 let nextId=1,epoch=0,graphP=null;
 const TKEY='ortak-nokta-transit-v3'+(CITY.id==='istanbul'?'':'-'+CITY.id);
 const ROUTE_MODE={subway:'metro',light_rail:'metro',tram:'tram',funicular:'funicular',ferry:'ferry',train:'rail',bus:'brt'};
@@ -1668,6 +1692,13 @@ const canvasR=L.canvas({padding:.5}),svgR=L.svg({padding:.5});
 const netLayer=L.layerGroup().addTo(map),candLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),resultLayer=L.layerGroup().addTo(map),peopleLayer=L.layerGroup().addTo(map);
 const pmarkers=new Map();
 const sideColor=s=>cssVar(s==='as'?'--as':'--eu');
+/* Yolculuğun adımları (yürüyüş hariç) sırayla farklı renk alır: 1. hat, 2. hat... Harita, çubuk ve adım listesi aynı sırayı kullanır. */
+function legPaint(legs){
+  let k=0;
+  return legs.map(l=>(l.kind==='access'&&l.mode==='walk')?null:{n:k+1,v:'--l'+(1+(k++)%6)});
+}
+const paintStyle=pt=>pt?'--lc:var('+pt.v+');--onlc:var(--on-'+pt.v.slice(2)+')':'';
+const fmtDist=m=>m<1000?Math.max(10,Math.round(m/10)*10)+' m':(m/1000).toFixed(1).replace('.',',')+' km';
 
 /* ---------- durum, ilerleme, hazırlık ---------- */
 function setStatus(t,kind){const s=$('#status');s.textContent=t||'';s.className='status'+(kind==='err'?' err':'');}
@@ -1714,12 +1745,12 @@ function patchRow(p){const el=$('.person[data-id="'+p.id+'"] .paddr');if(el)el.t
 /* Yolculuk çubuğu: parça genişliği süreyle orantılıdır, iz uzunluğu en uzun yolculuğa eşittir.
    Yürüyüş açık dolgu, otobüs taramalı dolgu, hat yolculuğu tam renk. Renge ek olarak etiket ve desen kullanılır. */
 function barHTML(legs,maxT){
-  const total=legs.reduce((s,l)=>s+l.t,0);
-  const segs=legs.map(l=>{
+  const total=legs.reduce((s,l)=>s+l.t,0),paint=legPaint(legs);
+  const segs=legs.map((l,li)=>{
     const kind=l.kind==='access'?l.mode:'ride';
     const label=kind==='walk'?'Yürüyüş':kind==='bus'?'Otobüs':(l.mode==='bus'?'Otobüs '+l.label:l.label);
     const wide=l.t/maxT>=.17;
-    return '<span class="js '+kind+'" style="flex:'+l.t.toFixed(1)+' 1 0" title="'+esc(label+' '+fmtMin(l.t))+'">'+(wide?'<i>'+esc(label)+'</i>':'')+'</span>';
+    return '<span class="js '+kind+'" style="flex:'+l.t.toFixed(1)+' 1 0;'+paintStyle(paint[li])+'" title="'+esc(label+' '+fmtMin(l.t))+'">'+(wide?'<i>'+esc(label)+'</i>':'')+'</span>';
   }).join('');
   return '<div class="jtrack"><div class="jfill" style="width:'+(total/maxT*100).toFixed(1)+'%">'+segs+'</div></div>';
 }
@@ -1734,8 +1765,50 @@ function patchTrips(){
     const t=it.times[i];
     tEl.innerHTML=fmtMin(t)+(state.people.length>1&&t===maxT?'<span class="longest">en uzun</span>':'');
     trip.hidden=false;
-    trip.innerHTML=barHTML(it.paths[i].legs,maxT)+'<p class="tsum">'+esc(it.paths[i].summary)+'</p>'+altHTML(it,i);
+    const open=state.open===p.id,legs=it.paths[i].legs,G=state.solved.G;
+    row.classList.toggle('open',open);
+    const nRide=legPaint(legs).filter(Boolean).length,tr=Math.max(0,nRide-1);
+    const chip=nRide===0?'Yalnızca yürüyüş':tr===0?'Aktarmasız':tr+' aktarma';
+    trip.innerHTML=barHTML(legs,maxT)+
+      '<button type="button" class="stepbtn" data-act="steps" aria-expanded="'+(open?'true':'false')+'" aria-controls="steps-'+p.id+'">'+
+      '<span class="tchip">'+chip+'</span><span class="sbl">'+(open?'Adımları gizle':'Adımları göster')+'</span>'+
+      '<svg class="chev" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>'+
+      (open?'<div id="steps-'+p.id+'">'+stepsHTML(G,legs)+altHTML(it,i)+'</div>':'<p class="tsum">'+esc(it.paths[i].summary)+'</p>');
   });
+}
+/* Adım listesi: yürüyüş, her hat ve aktarmalar sırayla. Hat adımları haritadaki çizgiyle aynı numara ve renkte. */
+function stepsHTML(G,legs){
+  const paint=legPaint(legs),hn=h=>G.hubs[h].name||'Durak';
+  let rides=0;
+  return '<ol class="steps" aria-label="Yolculuk adımları">'+legs.map((l,i)=>{
+    const pt=paint[i];
+    let title,meta,chip='';
+    if(l.kind==='access'){
+      if(l.mode==='walk'){title='Yürüyüş';meta=fmtMin(l.t)+(l.dist?' · '+fmtDist(l.dist):'')+' · '+hn(l.to)+' durağına';}
+      else{title='Otobüs (tahmini)';meta=fmtMin(l.t)+' · '+hn(l.to)+' durağına';rides++;}
+    }else{
+      const st=legStops(G,l),n=st.length-1;
+      title=l.mode==='bus'?'Otobüs '+l.label:l.label;
+      meta=fmtMin(l.t)+' · '+(st[0].name||hn(l.from))+' → '+(st[st.length-1].name||hn(l.to))+(n>0?' · '+n+' durak':'');
+      if(rides>0) chip='<span class="tchip">aktarma</span>';
+      rides++;
+    }
+    return '<li class="step '+(pt?'ride':'walk')+'"'+(pt?' style="'+paintStyle(pt)+'"':'')+'><span class="snum" aria-hidden="true">'+(pt?pt.n:'')+'</span>'+
+      '<div class="sbody"><b>'+esc(title)+'</b>'+chip+'<span class="sm">'+esc(meta)+'</span></div></li>';
+  }).join('')+'</ol>';
+}
+function toggleOpen(id){
+  const p=state.people.find(x=>x.id===id);
+  if(!p) return;
+  const r=state.result,it=r&&r.items[r.selected];
+  if(!it||!it.paths){focusPoint(p.lat,p.lng);return;}
+  state.open=state.open===id?null:id;
+  patchTrips();
+  showPaths(it,true);
+  const b=state.open!==null&&routeBounds.get(id);
+  if(b&&b.isValid()) map.fitBounds(b,Object.assign({maxZoom:16,animate:true},padOpts())); else refit();
+  const card=$('.person[data-id="'+id+'"]');
+  if(card&&state.open!==null) card.scrollIntoView({block:'nearest',behavior:reduceMotion?'auto':'smooth'});
 }
 function renderPeople(){
   const ol=$('#people');
@@ -1778,7 +1851,7 @@ function refit(){
 }
 function invalidate(){
   epoch++;
-  state.solved=null;state.result=null;
+  state.solved=null;state.result=null;state.open=null;
   candLayer.clearLayers();routeLayer.clearLayers();resultLayer.clearLayers();
   $('#resultSec').hidden=true;$('#resultSec').innerHTML='';
   patchTrips();updateReady();
@@ -1813,11 +1886,15 @@ function removePerson(id){
 function drawNetwork(){
   netLayer.clearLayers();
   if(!state.lines||!$('#showNet').checked) return;
-  const col=cssVar('--net');
+  const col=cssVar('--net'),seen=new Set();
   state.lines.forEach(ln=>{
     if(ln.m==='bus') return;
     const ferry=ln.m==='ferry';
-    L.polyline(ln.s.map(s=>[s[0],s[1]]),{renderer:canvasR,color:col,weight:ferry?1.5:2,opacity:.75,dashArray:ferry?'4 5':null,interactive:false}).addTo(netLayer);
+    const opt={renderer:canvasR,color:col,weight:ferry?1.5:2,opacity:.75,dashArray:ferry?'4 5':null,interactive:false};
+    /* Gömülü yol verisi varsa raylı hat gerçek güzergâhıyla çizilir (ortak parçalar bir kez), yoksa duraktan durağa düz çizgi */
+    const ws=ferry?null:embeddedWays(ln.id);
+    if(ws){ws.forEach(w=>{if(seen.has(w)) return;seen.add(w);L.polyline(w,opt).addTo(netLayer);});return;}
+    L.polyline(ln.s.map(s=>[s[0],s[1]]),opt).addTo(netLayer);
   });
 }
 function drawCands(){
@@ -2194,29 +2271,39 @@ function midOf(ll){
   }
   return ll[Math.floor(ll.length/2)];
 }
+const routeBounds=new Map(); /* kişi kimliği → o kişinin rotasının sınırları (karta tıklayınca haritayı oraya götürmek için) */
 function showPaths(it,still){
-  routeLayer.clearLayers();
-  const G=state.solved.G,surf=cssVar('--surface'),tags=[];
+  routeLayer.clearLayers();routeBounds.clear();
+  const G=state.solved.G,surf=cssVar('--surface'),walkCol=cssVar('--ink-2'),tags=[];
+  const sel=state.open; /* seçili kişi varsa onun rotası renkli ve öne çıkar, diğerleri soluk çizilir */
   const tag=(pt,text,col)=>{
     if(!text||!pt||tags.some(t=>t.text===text&&dm(t.p,pt)<700)) return;
     tags.push({p:pt,text});
     L.marker(pt,{icon:L.divIcon({className:'ltag-wrap',html:'<span class="ltag" aria-hidden="true" style="border-color:'+col+'">'+esc(text)+'</span>',iconSize:[0,0]}),interactive:false,keyboard:false,zIndexOffset:400}).addTo(routeLayer);
   };
-  state.people.forEach((p,i)=>{
-    const col=sideColor(p.side);
-    it.paths[i].legs.forEach(l=>{
+  /* Seçili kişi en son çizilir ki üstte kalsın */
+  const order=state.people.map((p,i)=>i).sort((a,b)=>(state.people[a].id===sel)-(state.people[b].id===sel));
+  order.forEach(i=>{
+    const p=state.people[i],dim=sel!==null&&p.id!==sel,paint=legPaint(it.paths[i].legs),bd=L.latLngBounds([[p.lat,p.lng],[p.lat,p.lng]]);
+    routeBounds.set(p.id,bd);
+    const op=dim?.28:1;
+    it.paths[i].legs.forEach((l,li)=>{
+      const pt=paint[li],col=pt?cssVar(pt.v):walkCol;
       if(l.kind==='access'){
         const h=G.hubs[l.to];
         const road=l.mode==='bus'&&p.side===h.side?roadCache.get(roadKey([p.lat,p.lng],[h.lat,h.lng])):null;
         const ll=road||[[p.lat,p.lng],[h.lat,h.lng]];
-        L.polyline(ll,{renderer:svgR,color:surf,weight:7,opacity:.7,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
-        L.polyline(ll,{renderer:svgR,color:col,weight:3.5,opacity:.95,dashArray:'1 7',lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
-        if(l.mode==='bus') tag(midOf(ll),'Otobüs (tahmini)',col);
+        ll.forEach(q=>bd.extend(q));
+        L.polyline(ll,{renderer:svgR,color:surf,weight:7,opacity:.7*op,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
+        L.polyline(ll,{renderer:svgR,color:col,weight:3.5,opacity:.95*op,dashArray:'1 7',lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
+        if(l.mode==='bus'&&!dim) tag(midOf(ll),'Otobüs (tahmini)',col);
       }else{
         const ll=legGeometry(G,l)||busLegRoad(G,l)||legPoints(G,l);
-        L.polyline(ll,{renderer:svgR,color:surf,weight:10,opacity:.75,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
-        const pl=L.polyline(ll,{renderer:svgR,color:col,weight:6,opacity:.95,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
-        if(!still) drawIn(pl,i*140);
+        ll.forEach(q=>bd.extend(q));
+        L.polyline(ll,{renderer:svgR,color:surf,weight:dim?7:10,opacity:.75*op,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
+        const pl=L.polyline(ll,{renderer:svgR,color:col,weight:dim?4:6,opacity:.95*op,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
+        if(!still&&!dim) drawIn(pl,i*140);
+        if(dim) return;
         /* Hattın her durağı tıklanınca adını gösterir. Biniş ve iniş durakları biraz büyüktür. */
         const sts=legStops(G,l),lab=l.mode==='bus'?'Otobüs '+l.label:l.label;
         sts.forEach((s,k)=>{
@@ -2224,7 +2311,7 @@ function showPaths(it,still){
           const mk=L.circleMarker(s.p,{renderer:svgR,radius:end?5:3.6,color:col,weight:end?2.5:2,fillColor:surf,fillOpacity:1,interactive:true,bubblingMouseEvents:false}).addTo(routeLayer);
           mk.bindPopup('<div class="sp"><b>'+esc(s.name||'İsimsiz durak')+'</b><span>'+esc(lab)+' · '+(k===0?'biniş':k===sts.length-1?'iniş':'ara durak')+'</span></div>',{closeButton:false,autoPan:false,offset:[0,-3],className:'sp-pop',maxWidth:240});
         });
-        tag(midOf(ll),l.mode==='bus'?'Otobüs '+l.label:l.label,col);
+        tag(midOf(ll),lab,col);
       }
     });
   });
@@ -2422,12 +2509,13 @@ $('#people').addEventListener('click',e=>{
     const pi=state.people.findIndex(x=>x.id===id);
     if(act.dataset.act==='alts') toggleAlts(pi);
     else if(act.dataset.act==='pick') pickAlt(pi,+act.dataset.k);
+    else if(act.dataset.act==='steps') toggleOpen(id);
     return;
   }
   if(e.target.closest('.x')){removePerson(id);return;}
   if(e.target.classList.contains('pname')) return;
-  const p=state.people.find(x=>x.id===id);
-  if(p) focusPoint(p.lat,p.lng);
+  if(e.target.closest('.altlist,.steps,.stepbtn')) return;
+  toggleOpen(id);
 });
 $('#resultSec').addEventListener('click',e=>{
   const b=e.target.closest('button[data-i]');
