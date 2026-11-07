@@ -12,7 +12,8 @@
     node tools/build-data.mjs --embed-only        indirme yok, data/*.json dosyalarını gömer
     node tools/build-data.mjs --html yol/dosya.html --out data
 
-  Seçenekler: --city istanbul|bursa|all   --html <dosya>   --out <klasör>   --embed-only   --endpoint <url>
+  Seçenekler: --city istanbul|bursa|all   --html <dosya>   --out <klasör>   --embed-only   --reorder   --endpoint <url>
+  --reorder: indirme yapmadan data/*.json içindeki otobüs duraklarını yolculuk sırasına dizer ve gömer.
 */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -123,6 +124,83 @@ export function parseTransit(j, bounds) {
   return { lines, stat };
 }
 
+/* ---------- durak sırası ----------
+   OpenStreetMap'te otobüs hatlarının çoğunda durak üyeleri yolculuk sırasında değil, karışık sırada tutuluyor (İstanbul'da hatların
+   yaklaşık %79'u). Karışık sırayla ardışık duraklar kilometrelerce uzakta çıkar, hat rastgele duraklar arasında atlar.
+   Çözüm: durakları aralarındaki toplam yol en kısa olacak şekilde dizmek (en yakın komşu + 2-opt). Durakların ardışık dizilimi doğru
+   yolculuk sırasına çok yakındır. Zaten düzenli olan hatlara dokunulmaz (OSM sırası en kısa yoldan %30'dan fazla uzun değilse korunur).
+   Raylı hatlar elle düzenlendiği için sıralanmaz, çünkü kıvrımlı hatlarda (T1 gibi) en kısa yol gerçek sıra değildir. */
+const KXS = Math.cos(41 * Math.PI / 180);
+const dmeter = (a, b) => Math.hypot((b[1] - a[1]) * KXS, b[0] - a[0]) * 111000;
+const pathMeters = (P) => { let t = 0; for (let i = 0; i + 1 < P.length; i++) t += dmeter(P[i], P[i + 1]); return t; };
+export function seriate(P) {
+  const n = P.length;
+  const id = P.map((_, i) => i);
+  if (n < 3) return id;
+  const D = P.map(() => new Float64Array(n));
+  let bi = 0, bj = 1, bd = -1;
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    const d = dmeter(P[i], P[j]);
+    D[i][j] = D[j][i] = d;
+    if (d > bd) { bd = d; bi = i; bj = j; }
+  }
+  let best = id, bl = Infinity;
+  for (const st of [bi, bj]) {
+    const used = new Uint8Array(n), ord = [st];
+    used[st] = 1;
+    for (let k = 1; k < n; k++) {
+      const l = ord[ord.length - 1];
+      let c = -1, cd = Infinity;
+      for (let j = 0; j < n; j++) if (!used[j] && D[l][j] < cd) { cd = D[l][j]; c = j; }
+      used[c] = 1; ord.push(c);
+    }
+    let improved = true, rounds = 0;
+    while (improved && rounds++ < 80) {
+      improved = false;
+      for (let i = 0; i < n - 1; i++) for (let j = i + 1; j < n; j++) {
+        const a = i > 0 ? ord[i - 1] : -1, b = ord[i], c = ord[j], e = j < n - 1 ? ord[j + 1] : -1;
+        const before = (a >= 0 ? D[a][b] : 0) + (e >= 0 ? D[c][e] : 0);
+        const after = (a >= 0 ? D[a][c] : 0) + (e >= 0 ? D[b][e] : 0);
+        if (after < before - 1e-6) { for (let l = i, r = j; l < r; l++, r--) { const t = ord[l]; ord[l] = ord[r]; ord[r] = t; } improved = true; }
+      }
+    }
+    let L = 0;
+    for (let i = 0; i + 1 < n; i++) L += D[ord[i]][ord[i + 1]];
+    if (L < bl) { bl = L; best = ord.slice(); }
+  }
+  return best;
+}
+/* Otobüs hattının duraklarını gerekiyorsa yeniden dizer. Döner: { s, changed } */
+export function orderBusStops(s) {
+  if (s.length < 3) return { s, changed: false };
+  const ord = seriate(s);
+  const re = ord.map((i) => s[i]);
+  if (pathMeters(s) > pathMeters(re) * 1.3) return { s: re, changed: true };
+  return { s, changed: false };
+}
+export function fixOrder(lines) {
+  let changed = 0, buses = 0;
+  const out = lines.map((l) => {
+    if (l.m !== 'bus') return l;
+    buses++;
+    const r = orderBusStops(l.s);
+    if (!r.changed) return l;
+    changed++;
+    return Object.assign({}, l, { s: r.s });
+  });
+  return { lines: out, changed, buses };
+}
+/* data/<şehir>.json içindeki sıkıştırılmış hatları açar (encode'un tersi) */
+export function decode(d) {
+  const names = d.names || [];
+  return (d.lines || []).map((l) => {
+    const f = l.s || [], s = [];
+    let la = 0, ln = 0;
+    for (let i = 0; i + 2 < f.length; i += 3) { la += f[i]; ln += f[i + 1]; s.push([la / 1e5, ln / 1e5, f[i + 2] >= 0 ? names[f[i + 2]] || '' : '']); }
+    return { id: l.id, m: l.m, n: l.n || '', r: l.r || '', s };
+  });
+}
+
 /* ---------- sıkıştırma: enlem, boylam art arda farklarla (1e5 katı), ad sıra numarasıyla ---------- */
 export function encode(city, lines, date) {
   const names = [];
@@ -198,7 +276,9 @@ async function fetchCity(name, cfg) {
       await sleep(1500);
     }
   }
-  const lines = [...all.values()];
+  const fixed = fixOrder([...all.values()]);
+  const lines = fixed.lines;
+  if (cfg.buses) log(`Durak sırası karışık olduğu için yeniden dizilen otobüs hattı: ${fixed.changed} / ${fixed.buses}`);
   const byMode = {};
   lines.forEach((l) => { byMode[l.m] = (byMode[l.m] || 0) + 1; });
   log('Hat sayıları:', JSON.stringify(byMode), `| 2'den az durağı olduğu için atlanan: ${total.skipped}`);
@@ -218,6 +298,7 @@ function args(argv) {
     else if (a === '--out') o.out = argv[++i];
     else if (a === '--endpoint') o.endpoint = argv[++i];
     else if (a === '--embed-only') o.embedOnly = true;
+    else if (a === '--reorder') { o.embedOnly = true; o.reorder = true; }
     else if (a === '--help' || a === '-h') { log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('*/')[0].replace('#!/usr/bin/env node\n/*', '')); process.exit(0); }
     else { console.error('Bilinmeyen seçenek: ' + a); process.exit(2); }
   }
@@ -236,7 +317,14 @@ async function main() {
   for (const c of cities) {
     const file = path.join(o.out, c + '.json');
     if (o.embedOnly) {
-      byCity[c] = JSON.parse(fs.readFileSync(file, 'utf8'));
+      let data = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (o.reorder) {
+        const fixed = fixOrder(decode(data));
+        data = encode(c, fixed.lines, data.t || date);
+        fs.writeFileSync(file, JSON.stringify(data));
+        log(`${c}: durak sırası yeniden dizilen otobüs hattı ${fixed.changed} / ${fixed.buses} (${file} güncellendi)`);
+      }
+      byCity[c] = data;
       continue;
     }
     const lines = await fetchCity(c, CITIES[c]);
