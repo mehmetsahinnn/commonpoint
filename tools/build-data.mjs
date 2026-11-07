@@ -15,6 +15,7 @@
   Seçenekler: --city istanbul|bursa|all   --html <dosya>   --out <klasör>   --embed-only   --reorder   --endpoint <url>
   --reorder: indirme yapmadan data/*.json içindeki otobüs duraklarını yolculuk sırasına dizer ve gömer.
   --geom-only: durak verisini yeniden indirmeden yalnızca hat yollarını (geometri) indirir, data/*.json'a ekler ve gömer.
+  --geom-all: --geom-only varsa yolu olmayan hatları tamamlar; bu bayrak tüm hatların yolunu baştan indirir.
   --geom-batch <n>: tek istekte indirilen hat sayısı (varsayılan 15). Sunucu sık zaman aşımı veriyorsa küçült (örn. 8).
   --geom-tol <metre>: hat yollarının sadeleştirme toleransı (varsayılan 5). Büyütmek dosyayı küçültür, çizim biraz kabalaşır.
   --no-geom: tam indirmede hat yollarını atlar (çizim canlı servislere ya da duraklardan geçen çizgiye düşer).
@@ -262,8 +263,9 @@ export function simplify(P, tol) {
   return P.filter((_, i) => keep[i]);
 }
 /* Kodlanmış veriye (encode çıktısı) yol tablosu ve hat başına parça listesi ekler. */
-export function addGeom(data, geom, tol = 5) {
-  const table = [];
+export function addGeom(data, geom, tol = 5, append = false) {
+  /* append: veride zaten yolu olan hatlara dokunulmaz, yeni parçalar mevcut tabloya eklenir (eksik hatları tamamlamak için) */
+  const table = append && Array.isArray(data.ways) ? data.ways : [];
   const idx = new Map();
   const wayIdx = (wid) => {
     if (idx.has(wid)) return idx.get(wid);
@@ -283,6 +285,7 @@ export function addGeom(data, geom, tol = 5) {
   };
   let covered = 0;
   data.lines.forEach((l) => {
+    if (append && l.g && l.g.length) { covered++; return; }
     delete l.g;
     const ws = geom.relWays.get(l.id);
     if (!ws || !ws.length) return;
@@ -461,11 +464,15 @@ async function fetchGeoms(ids, tol = 5, cacheFile = null, batch = 15) {
   }
   return { ways, relWays };
 }
-async function geomFor(name, data, tol = 5, cacheFile = null, batch = 15) {
-  log(`\n== ${name}: hat yolları (geometri) indiriliyor, birkaç dakika sürebilir ==`);
-  const ids = data.lines.map((l) => l.id);
+async function geomFor(name, data, tol = 5, cacheFile = null, batch = 15, append = false) {
+  const target = append ? data.lines.filter((l) => !(l.g && l.g.length)) : data.lines;
+  if (append && !target.length) { log(`\n== ${name}: tüm hatların yolu zaten var, indirilecek bir şey yok (hepsini yeniden indirmek için --geom-all) ==`); return data; }
+  log(append
+    ? `\n== ${name}: yolu olmayan ${target.length} hat tamamlanıyor (hepsini yeniden indirmek için --geom-all) ==`
+    : `\n== ${name}: hat yolları (geometri) indiriliyor, birkaç dakika sürebilir ==`);
+  const ids = target.map((l) => l.id);
   const g = await fetchGeoms(ids, tol, cacheFile, batch);
-  const st = addGeom(data, g, 0); /* yollar indirilirken zaten sadeleştirildi */
+  const st = addGeom(data, g, 0, append); /* yollar indirilirken zaten sadeleştirildi */
   if (cacheFile) { try { fs.unlinkSync(cacheFile); } catch (e) { /* yok */ } }
   const kb = Math.round(JSON.stringify(data.ways).length / 1024);
   log(`Yolu bulunan hat: ${st.covered} / ${st.total}, yol parçası: ${st.ways}, yol tablosu: ${kb} KB (sadeleştirme ${tol} m)`);
@@ -487,6 +494,7 @@ function args(argv) {
     else if (a === '--reorder') { o.embedOnly = true; o.reorder = true; }
     else if (a === '--geom-only') { o.embedOnly = true; o.geom = true; }
     else if (a === '--no-geom') o.noGeom = true;
+    else if (a === '--geom-all') o.geomAll = true;
     else if (a === '--geom-batch') o.geomBatch = Math.max(1, Math.min(60, Number(argv[++i]) || 15));
     else if (a === '--geom-tol') o.geomTol = Math.max(1, Number(argv[++i]) || 5);
     else if (a === '--help' || a === '-h') { log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('*/')[0].replace('#!/usr/bin/env node\n/*', '')); process.exit(0); }
@@ -510,7 +518,7 @@ async function main() {
     if (o.embedOnly) {
       let data = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (o.geom) {
-        data = await geomFor(c, data, o.geomTol, cachePath(c), o.geomBatch);
+        data = await geomFor(c, data, o.geomTol, cachePath(c), o.geomBatch, !o.geomAll && Array.isArray(data.ways));
         fs.writeFileSync(file, JSON.stringify(data));
         log(`${file} yazıldı (${(fs.statSync(file).size / 1024).toFixed(0)} KB)`);
       }
