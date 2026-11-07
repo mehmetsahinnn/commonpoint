@@ -23,6 +23,7 @@ Arayüz renk teorisi ve UX yasalarına göre yeniden tasarlandı.
 - Tek vurgu rengi turkuaz (%10). Renk yalnızca veride anlam taşır: mavi Avrupa, turuncu Anadolu. Buluşma noktası renkle değil şekil ve boyutla ayrışır.
 - Metin kontrastı WCAG 4.5:1, işaretler 3:1 üzerindedir. Açık ve koyu tema ayrı seçilmiş değerlerdir, sistem temasını izler.
 - Her yolculuk satırında süre çubuğu vardır, en uzun yolculuk işaretlidir. Renk dışında etiket, desen ve sayı da kullanılır.
+- Harita zemini varsayılan olarak OpenStreetMap Standart karolarıdır (anahtar gerekmez). Zemin, hat renkleri öne çıksın diye CSS ile soluklaştırılır. Seçenekler içindeki "Harita rengi" kaydırıcısı doygunluğu ayarlar (soluk ↔ özgün renk), seçim tarayıcıda hatırlanır. Karolar yüklenmezse sırayla OSM Fransa, Esri ve OSM Almanya denenir.
 - Seçenekler ve açıklama varsayılan olarak kapalıdır. Adres kutusu adres, koordinat ve Google Haritalar bağlantısını kabul eder.
 
 ## Hat verisi

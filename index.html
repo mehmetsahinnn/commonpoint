@@ -872,10 +872,14 @@ details[open]>summary::after{transform:rotate(-135deg)}
 .leaflet-tooltip-bottom.mt:before{border-bottom-color:var(--ink)}
 .ltag-wrap{pointer-events:none}
 .ltag{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;padding:2px 8px;border:2px solid var(--ink);border-radius:99px;background:var(--surface);color:var(--ink);font:800 12px/1.3 var(--font-display);box-shadow:var(--shadow-mark)}
-.leaflet-tile-pane{filter:saturate(.55) contrast(.95)}
+/* Harita zemini soluklaştırılır ki hat renkleri ayrışsın. Doygunluk Seçenekler'deki kaydırıcıdan gelir (--map-sat, 0 gri, 1 özgün renk).
+   Ölçüm (OSM Carto renkleriyle): bu ayarda mavi ve turuncu hat renkleri zeminin en açığına ve en koyusuna karşı 3:1 kontrastın üstünde kalır. */
+.leaflet-tile-pane{filter:saturate(var(--map-sat,.45)) contrast(.92) brightness(1.04)}
 @media (prefers-color-scheme: dark){
-  .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.85) saturate(.5)}
+  .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.78) contrast(.92) saturate(calc(var(--map-sat,.45)*.78))}
 }
+.range{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--ink-2)}
+.range input{flex:1;min-width:0;min-height:44px;accent-color:var(--accent);cursor:pointer}
 .map-add .leaflet-grab{cursor:crosshair}
 .leaflet-container{font-family:var(--font-body);background:var(--surface-2)}
 .leaflet-bar{border:1px solid var(--line)!important;box-shadow:var(--shadow-mark)!important}
@@ -980,6 +984,10 @@ details[open]>summary::after{transform:rotate(-135deg)}
         <div class="grp">
           <label class="lbl" for="base">Harita kaynağı</label>
           <select id="base" class="field"></select>
+        </div>
+        <div class="grp">
+          <label class="lbl" for="mapSat">Harita rengi</label>
+          <div class="range"><span aria-hidden="true">Soluk</span><input type="range" id="mapSat" min="0" max="100" step="5" value="45"><span aria-hidden="true">Canlı</span></div>
         </div>
         <div class="grp">
           <span class="lbl">Hat verisi</span>
@@ -1437,7 +1445,7 @@ async function reverse(lat,lng){
 }
 
 /* ---------- hat verisi (Overpass) ---------- */
-const state={people:[],side:'auto',mode:'max',base:'osmfr',lines:null,graph:null,solved:null,result:null,running:false,pick:false,sheetBefore:null};
+const state={people:[],side:'auto',mode:'max',base:'osm',lines:null,graph:null,solved:null,result:null,running:false,pick:false,sheetBefore:null};
 let nextId=1,epoch=0,graphP=null;
 const TKEY='ortak-nokta-transit-v3'+(CITY.id==='istanbul'?'':'-'+CITY.id);
 const ROUTE_MODE={subway:'metro',light_rail:'metro',tram:'tram',funicular:'funicular',ferry:'ferry',train:'rail',bus:'brt'};
@@ -1615,10 +1623,10 @@ window.addEventListener('resize',()=>{if(mobileMQ.matches) applySheet(sheetPx(sh
    Karolar CSS ile soluklaştırılır, böylece veri renkleri zeminden ayrışır. */
 const OSM_ATTR='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 const TILE_SRC=[
+  {id:'osm',label:'OSM Standart',url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',opts:{maxZoom:19},attr:OSM_ATTR},
   {id:'osmfr',label:'OSM Fransa',url:'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png',opts:{subdomains:'abc',maxZoom:20},attr:OSM_ATTR+' · <a href="https://www.openstreetmap.fr">OpenStreetMap France</a>'},
   {id:'esri',label:'Esri Sokak',url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',opts:{maxZoom:19},attr:'Tiles © Esri'},
-  {id:'osmde',label:'OSM Almanya',url:'https://tile.openstreetmap.de/{z}/{x}/{y}.png',opts:{maxZoom:18},attr:OSM_ATTR},
-  {id:'osm',label:'OSM Standart',url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',opts:{maxZoom:19},attr:OSM_ATTR}
+  {id:'osmde',label:'OSM Almanya',url:'https://tile.openstreetmap.de/{z}/{x}/{y}.png',opts:{maxZoom:18},attr:OSM_ATTR}
 ];
 const mq=window.matchMedia('(prefers-color-scheme: dark)');
 let tiles=null,tileIdx=0,tileOk=0,tileErr=0,tipTimer=0;
@@ -1666,7 +1674,7 @@ function lock(b){$('#run').disabled=b;$$('input[name=side]').forEach(i=>{i.disab
 
 const KEY='ortak-nokta-v2'+(CITY.id==='istanbul'?'':'-'+CITY.id);
 function save(){
-  try{localStorage.setItem(KEY,JSON.stringify({people:state.people.map(p=>({name:p.name,lat:p.lat,lng:p.lng,addr:p.addr})),side:state.side,base:state.base,show:$('#showCands').checked,net:$('#showNet').checked}));}catch(e){}
+  try{localStorage.setItem(KEY,JSON.stringify({people:state.people.map(p=>({name:p.name,lat:p.lat,lng:p.lng,addr:p.addr})),side:state.side,base:state.base,bv:2,sat:+$('#mapSat').value,show:$('#showCands').checked,net:$('#showNet').checked}));}catch(e){}
 }
 function load(){
   try{
@@ -1678,7 +1686,8 @@ function load(){
     if(!d) return;
     (d.people||[]).forEach(p=>{if(typeof p.lat==='number'&&typeof p.lng==='number'&&inCity(p.lat,p.lng))state.people.push({id:nextId++,name:String(p.name||'Kişi '+nextId).slice(0,40),lat:p.lat,lng:p.lng,addr:p.addr||'',side:sideOf(p.lat,p.lng)});});
     if(['auto','eu','as'].includes(d.side))state.side=d.side;
-    if(TILE_SRC.some(s=>s.id===d.base))state.base=d.base;
+    if(d.bv===2&&TILE_SRC.some(s=>s.id===d.base))state.base=d.base;
+    if(typeof d.sat==='number'&&d.sat>=0&&d.sat<=100)$('#mapSat').value=String(d.sat);
     if(d.show===false)$('#showCands').checked=false;
     if(d.net===false)$('#showNet').checked=false;
   }catch(e){}
@@ -2226,6 +2235,8 @@ $('#netReload').addEventListener('click',async()=>{
 });
 $('#run').addEventListener('click',run);
 if(mq.addEventListener) mq.addEventListener('change',()=>{drawCands();drawNetwork();if(state.solved&&state.result)showPaths(state.result.items[state.result.selected]);});
+function applySat(){document.documentElement.style.setProperty('--map-sat',String(+$('#mapSat').value/100));}
+$('#mapSat').addEventListener('input',()=>{applySat();save();});
 $('#tileRetry').addEventListener('click',()=>{$('#tileTip').hidden=true;useTiles(tileIdx);armTip();});
 TILE_SRC.forEach(s=>{const o=document.createElement('option');o.value=s.id;o.textContent=s.label;$('#base').appendChild(o);});
 $('#base').addEventListener('change',e=>{
@@ -2263,6 +2274,7 @@ setSheet('half');
 renderPeople();drawPeople();
 offsetView();
 fit();
+applySat();
 useTiles(Math.max(0,TILE_SRC.findIndex(s=>s.id===state.base)));armTip();
 ensureGraph().catch(()=>{});
 })();
