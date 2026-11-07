@@ -15,6 +15,7 @@
   Seçenekler: --city istanbul|bursa|all   --html <dosya>   --out <klasör>   --embed-only   --reorder   --endpoint <url>
   --reorder: indirme yapmadan data/*.json içindeki otobüs duraklarını yolculuk sırasına dizer ve gömer.
   --geom-only: durak verisini yeniden indirmeden yalnızca hat yollarını (geometri) indirir, data/*.json'a ekler ve gömer.
+  --geom-batch <n>: tek istekte indirilen hat sayısı (varsayılan 15). Sunucu sık zaman aşımı veriyorsa küçült (örn. 8).
   --geom-tol <metre>: hat yollarının sadeleştirme toleransı (varsayılan 5). Büyütmek dosyayı küçültür, çizim biraz kabalaşır.
   --no-geom: tam indirmede hat yollarını atlar (çizim canlı servislere ya da duraklardan geçen çizgiye düşer).
 */
@@ -61,6 +62,7 @@ const batchQuery = (ids) => `[out:json][timeout:180];rel(id:${ids.join(',')})->.
 /* Yalnızca testlerde bekleme sürelerini kısaltmak için (OVERPASS_WAIT_SCALE=0.01). Normalde 1. */
 const WAIT_SCALE = process.env.OVERPASS_WAIT_SCALE === undefined ? 1 : Math.max(0, Number(process.env.OVERPASS_WAIT_SCALE) || 0);
 let endpoints = ENDPOINTS;
+const isBusy = (e) => [429, 502, 503].includes(e && e.status) || /capacity|too many|busy|rate/i.test((e && e.message) || '');
 async function overpass(query, tries = 6) {
   let lastErr = null;
   for (let a = 0; a < tries; a++) {
@@ -89,7 +91,11 @@ async function overpass(query, tries = 6) {
     } catch (e) {
       clearTimeout(timer);
       lastErr = e;
-      const wait = Math.round(WAIT_SCALE * Math.min(60000, Math.max(e.retryAfter ? e.retryAfter * 1000 : 0, (e.status === 429 ? 15000 : 4000) * (a + 1))));
+      /* Yoğun sunucu (429, 502, 503): önce sıradaki sunucuya hemen geçilir, hepsi denendikten sonra uzun beklenir */
+      const busy = isBusy(e);
+      const cycled = (a + 1) % endpoints.length === 0;
+      const base = busy ? (cycled ? 15000 * ((a + 1) / endpoints.length) : 2000) : 4000 * (a + 1);
+      const wait = Math.round(WAIT_SCALE * Math.min(60000, Math.max(e.retryAfter ? e.retryAfter * 1000 : 0, base)));
       log(`  uyarı: ${new URL(ep).host} yanıt vermedi (${e.message}), ${Math.round(wait / 1000)} sn sonra tekrar deneniyor`);
       await sleep(wait);
     }
@@ -383,36 +389,84 @@ async function fetchCity(name, cfg) {
   return lines;
 }
 
-async function fetchGeoms(ids) {
-  const ways = new Map(), relWays = new Map();
-  const add = (j) => {
-    const g = parseGeom(j);
-    g.ways.forEach((v, k) => ways.set(k, v));
-    g.relWays.forEach((v, k) => relWays.set(k, v));
+/* İlerleme önbelleği: her grup indirilince bir satır eklenir. Betik kesilirse ya da sunucu uzun süre meşgul kalırsa aynı komut kalan yerden devam eder. */
+const CACHE_MAX_AGE = 3 * 864e5;
+function loadGeomCache(file, tol) {
+  const done = new Set(), ways = new Map(), relWays = new Map();
+  if (!file || !fs.existsSync(file)) return { done, ways, relWays };
+  fs.readFileSync(file, 'utf8').split('\n').forEach((ln) => {
+    if (!ln) return;
+    try {
+      const r = JSON.parse(ln);
+      if (r.tol !== tol || Date.now() - r.t > CACHE_MAX_AGE) return;
+      r.ways.forEach(([id, f]) => ways.set(id, f));
+      r.relWays.forEach(([id, w]) => relWays.set(id, w));
+      r.rels.forEach((id) => done.add(id));
+    } catch (e) { /* yarım kalmış son satır */ }
+  });
+  return { done, ways, relWays };
+}
+async function fetchGeoms(ids, tol = 5, cacheFile = null, batch = 15) {
+  const c = loadGeomCache(cacheFile, tol);
+  const ways = c.ways, relWays = c.relWays;
+  if (c.done.size) log(`  önbellekten ${c.done.size} hattın yolu alındı, kalanlar indiriliyor`);
+  const save = (part, g) => {
+    if (!cacheFile) return;
+    const used = new Set();
+    g.relWays.forEach((w) => w.forEach((x) => used.add(x)));
+    fs.appendFileSync(cacheFile, JSON.stringify({
+      tol, t: Date.now(), rels: part,
+      ways: [...used].map((id) => [id, g.ways.get(id)]),
+      relWays: [...g.relWays],
+    }) + '\n');
   };
+  const MAX_BUSY = 8;
   const fetchBatch = async (part) => {
-    try { add(await overpass(geomQuery(part), 3)); }
-    catch (e) {
-      if (part.length <= 1) { log(`  uyarı: ${part[0]} numaralı hattın yolları alınamadı (${e.message})`); return; }
-      log(`  ${part.length} hatlık yol grubu indirilemedi, ikiye bölünüyor`);
-      const h = part.length >> 1;
-      await fetchBatch(part.slice(0, h));
-      await fetchBatch(part.slice(h));
+    for (let round = 0; ; round++) {
+      try {
+        const g = parseGeom(await overpass(geomQuery(part), 3));
+        /* bellekte ve önbellekte yalnızca sadeleştirilmiş yol tutulur */
+        g.ways.forEach((v, k) => g.ways.set(k, simplify(v, tol)));
+        g.ways.forEach((v, k) => ways.set(k, v));
+        g.relWays.forEach((v, k) => relWays.set(k, v));
+        part.forEach((id) => { if (!relWays.has(id)) relWays.set(id, []); });
+        save(part, { ways: g.ways, relWays: new Map(part.map((id) => [id, g.relWays.get(id) || []])) });
+        return;
+      } catch (e) {
+        if (isBusy(e)) {
+          if (round >= MAX_BUSY) {
+            const err = new Error('Overpass sunucuları uzun süredir meşgul. İlerleme kaydedildi: aynı komutu biraz sonra tekrar çalıştırırsan kalan yerden devam eder.');
+            err.fatal = true;
+            throw err;
+          }
+          const w = Math.round(WAIT_SCALE * 60000);
+          log(`  sunucular meşgul, ${Math.round(w / 1000)} sn bekleyip aynı grubu tekrar deniyorum (${round + 1}/${MAX_BUSY})`);
+          await sleep(w);
+          continue;
+        }
+        if (part.length <= 1) { log(`  uyarı: ${part[0]} numaralı hattın yolları alınamadı (${e.message})`); return; }
+        log(`  ${part.length} hatlık yol grubu indirilemedi (${e.message}), ikiye bölünüyor`);
+        const h = part.length >> 1;
+        await fetchBatch(part.slice(0, h));
+        await fetchBatch(part.slice(h));
+        return;
+      }
     }
   };
-  const BATCH = 25;
-  for (let i = 0; i < ids.length; i += BATCH) {
-    await fetchBatch(ids.slice(i, i + BATCH));
-    log(`  yollar ${Math.min(i + BATCH, ids.length)}/${ids.length} (${ways.size} yol parçası)`);
+  const todo = ids.filter((id) => !c.done.has(id));
+  for (let i = 0; i < todo.length; i += batch) {
+    await fetchBatch(todo.slice(i, i + batch));
+    log(`  yollar ${Math.min(i + batch, todo.length)}/${todo.length} (${ways.size} yol parçası)`);
     await sleep(Math.round(1500 * WAIT_SCALE));
   }
   return { ways, relWays };
 }
-async function geomFor(name, data, tol = 5) {
+async function geomFor(name, data, tol = 5, cacheFile = null, batch = 15) {
   log(`\n== ${name}: hat yolları (geometri) indiriliyor, birkaç dakika sürebilir ==`);
   const ids = data.lines.map((l) => l.id);
-  const g = await fetchGeoms(ids);
-  const st = addGeom(data, g, tol);
+  const g = await fetchGeoms(ids, tol, cacheFile, batch);
+  const st = addGeom(data, g, 0); /* yollar indirilirken zaten sadeleştirildi */
+  if (cacheFile) { try { fs.unlinkSync(cacheFile); } catch (e) { /* yok */ } }
   const kb = Math.round(JSON.stringify(data.ways).length / 1024);
   log(`Yolu bulunan hat: ${st.covered} / ${st.total}, yol parçası: ${st.ways}, yol tablosu: ${kb} KB (sadeleştirme ${tol} m)`);
   if (kb > 12000) log('  uyarı: yol tablosu çok büyük, sayfa geç açılabilir. Daha küçük için --geom-tol 10 (metre) ile yeniden dene.');
@@ -433,6 +487,7 @@ function args(argv) {
     else if (a === '--reorder') { o.embedOnly = true; o.reorder = true; }
     else if (a === '--geom-only') { o.embedOnly = true; o.geom = true; }
     else if (a === '--no-geom') o.noGeom = true;
+    else if (a === '--geom-batch') o.geomBatch = Math.max(1, Math.min(60, Number(argv[++i]) || 15));
     else if (a === '--geom-tol') o.geomTol = Math.max(1, Number(argv[++i]) || 5);
     else if (a === '--help' || a === '-h') { log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('*/')[0].replace('#!/usr/bin/env node\n/*', '')); process.exit(0); }
     else { console.error('Bilinmeyen seçenek: ' + a); process.exit(2); }
@@ -449,12 +504,13 @@ async function main() {
   fs.mkdirSync(o.out, { recursive: true });
   const date = new Date().toISOString().slice(0, 10);
   const byCity = {};
+  const cachePath = (c) => path.join(o.out, `.geom-${c}.jsonl`);
   for (const c of cities) {
     const file = path.join(o.out, c + '.json');
     if (o.embedOnly) {
       let data = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (o.geom) {
-        data = await geomFor(c, data, o.geomTol);
+        data = await geomFor(c, data, o.geomTol, cachePath(c), o.geomBatch);
         fs.writeFileSync(file, JSON.stringify(data));
         log(`${file} yazıldı (${(fs.statSync(file).size / 1024).toFixed(0)} KB)`);
       }
@@ -470,8 +526,20 @@ async function main() {
     }
     const lines = await fetchCity(c, CITIES[c]);
     let data = encode(c, lines, date);
-    if (!o.noGeom) data = await geomFor(c, data, o.geomTol);
+    /* Durak verisi önce yazılır: yol indirmesi kesilirse indirilen hatlar kaybolmaz, --geom-only ile tamamlanır */
     fs.writeFileSync(file, JSON.stringify(data));
+    if (!o.noGeom) {
+      try {
+        data = await geomFor(c, data, o.geomTol, cachePath(c), o.geomBatch);
+        fs.writeFileSync(file, JSON.stringify(data));
+      } catch (e) {
+        if (!e.fatal) throw e;
+        log('\nHata: ' + e.message);
+        log(`Durak verisi (${file}) yazıldı. Yolları tamamlamak için: node tools/build-data.mjs --geom-only`);
+        process.exitCode = 1;
+        o.noGeom = true;
+      }
+    }
     byCity[c] = data;
     log(`${file} yazıldı (${(fs.statSync(file).size / 1024).toFixed(0)} KB)`);
   }
