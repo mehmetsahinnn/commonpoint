@@ -56,6 +56,6 @@ Gerçek otobüs ağı varken kişi yalnızca yürüyerek (en çok 1,5 km) bir du
 
 ## Lisans
 
-Kod [MIT lisansıyla](LICENSE) yayımlanır.
+Kod [PolyForm Noncommercial 1.0.0](LICENSE) lisansıyla yayımlanır. Kişisel, hobi, araştırma, eğitim ve kâr amacı gütmeyen kurumların kullanımı serbesttir, kodu değiştirip ticari olmayan amaçla paylaşabilirsin. Ticari kullanım için izin gerekir: [@mehmetsahinnn](https://github.com/mehmetsahinnn) ile iletişime geç. Bu lisans açık kaynak (OSI) tanımına girmez, kaynak kodu görülebilir bir lisanstır.
 
-Bu lisans `data/` altındaki ve `index.html` içine gömülü hat verisini kapsamaz. O veri © OpenStreetMap katkıcılarına aittir ve [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/) altındadır. Veriyi kullanırken ya da yeniden dağıtırken "© OpenStreetMap contributors" atfı gerekir. Gömülü Leaflet kütüphanesi BSD-2-Clause lisanslıdır (© Vladimir Agafonkin, bildirimi `index.html` içinde korunmuştur).
+Bu lisans `data/` altındaki ve `index.html` içine gömülü hat verisini kapsamaz. O veri © OpenStreetMap katkıcılarına aittir ve [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/) altındadır. ODbL ticari kullanıma izin verir, bu nedenle veri için ticari kullanım yasağı koyamam. Veriyi kullanırken ya da yeniden dağıtırken "© OpenStreetMap contributors" atfı gerekir. Gömülü Leaflet kütüphanesi BSD-2-Clause lisanslıdır (© Vladimir Agafonkin, bildirimi `index.html` içinde korunmuştur) ve bu lisanstan etkilenmez.
