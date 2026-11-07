@@ -9,6 +9,7 @@
 - Tek ölçüt: herkesin en uzun yolculuğu en kısa olan durak seçilir (minimax). Toplam süre hedeflenmez.
 - Sonuç mekan değil koordinattır. Araç yoktur, Avrasya Tüneli kullanılmaz.
 - Sonuçtan sonra her kişinin satırında "Rota seç" vardır: aynı buluşma noktasına başka bir otobüs ya da raylı hatla gitmenin alternatifleri süre farkıyla listelenir. Seçilen rota haritada çizilir, kişinin süresi ve en uzun yolculuk işareti buna göre güncellenir. Seçim yalnızca o kişinin gösterilen rotasını değiştirir, buluşma noktası aynı kalır.
+- Haritada çizilen rotanın her durağı bir noktayla işaretlidir. Noktaya tıklayınca hattın kendi durak adı, hat ve biniş, iniş ya da ara durak bilgisi açılır.
 
 Tek dosyalı statik uygulamadır (`index.html`, Leaflet gömülü). Sunucu gerekmez.
 

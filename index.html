@@ -896,6 +896,11 @@ details[open]>summary::after{transform:rotate(-135deg)}
 .leaflet-control-attribution a{color:var(--accent-ink)!important}
 .leaflet-tooltip{background:var(--surface);color:var(--ink);border:1px solid var(--line);box-shadow:var(--shadow-mark);font-weight:700}
 .leaflet-tooltip-top:before{border-top-color:var(--surface)}
+.sp-pop .leaflet-popup-content-wrapper{background:var(--surface);color:var(--ink);border:1px solid var(--line);box-shadow:var(--shadow-mark);border-radius:10px}
+.sp-pop .leaflet-popup-tip{background:var(--surface);box-shadow:none}
+.sp-pop .leaflet-popup-content{margin:8px 12px;line-height:1.3}
+.sp b{display:block;font-weight:800;font-size:13px}
+.sp span{display:block;margin-top:2px;color:var(--ink-2);font-size:12px}
 @media (pointer:coarse){
   .leaflet-touch .leaflet-bar a{width:40px;height:40px;line-height:40px}
 }
@@ -1221,13 +1226,13 @@ function buildGraph(lines){
     }
     return p;
   };
-  const hubPts=new Map();
+  const hubPts=new Map(),hubNm=new Map(); /* hubNm: hubPts ile aynı sırada, hattın kendi durak adları */
   lines.forEach((ln,li)=>{
     const mi=metaOf(ln),info=MODE_INFO[ln.m];
     for(let k=0;k<ln.s.length;k++){
       const st=stops[start[li]+k],hk=mi+'|'+st.hub;
-      let a=hubPts.get(hk);if(!a){a=[];hubPts.set(hk,a);}
-      if(!a.some(q=>q[0]===st.lat&&q[1]===st.lng)) a.push([st.lat,st.lng]);
+      let a=hubPts.get(hk),an=hubNm.get(hk);if(!a){a=[];an=[];hubPts.set(hk,a);hubNm.set(hk,an);}
+      if(!a.some(q=>q[0]===st.lat&&q[1]===st.lng)){a.push([st.lat,st.lng]);an.push(st.name);}
     }
     for(let k=0;k+1<ln.s.length;k++){
       const sa=stops[start[li]+k],sb=stops[start[li]+k+1];
@@ -1241,7 +1246,7 @@ function buildGraph(lines){
     }
   });
   rideW.forEach(e=>adj[e.u].push({to:e.v,w:e.w,t:2,ln:e.mi}));
-  return {hubs,N,adj,nodeHub,metas,lines,hubPts,realBus:lines.some(l=>l.m==='bus')};
+  return {hubs,N,adj,nodeHub,metas,lines,hubPts,hubNm,realBus:lines.some(l=>l.m==='bus')};
 }
 
 class Heap{
@@ -2103,21 +2108,21 @@ function routeAlong(g,pts){
   return {ll:out,frac:ok/(pts.length-1),len};
 }
 /* Hattın kendi durakları: yolculuğun her aktarma noktası için hattın o noktadaki durağı (komşu noktaya en yakın olan) */
-function legPoints(G,l){
+function legStops(G,l){
   const out=[];
   l.path.forEach((h,i)=>{
-    const c=G.hubPts&&G.hubPts.get(l.ln+'|'+h);
-    let p;
-    if(c&&c.length===1) p=c[0];
-    else if(c&&c.length){
+    const key=l.ln+'|'+h,c=G.hubPts&&G.hubPts.get(key),nm=G.hubNm&&G.hubNm.get(key);
+    let k=0;
+    if(c&&c.length>1){
       const nx=i+1<l.path.length?G.hubs[l.path[i+1]]:null;
-      const ref=out.length?out[out.length-1]:nx?[nx.lat,nx.lng]:null;
-      p=ref?c.reduce((x,y)=>dm(y,ref)<dm(x,ref)?y:x):c[0];
-    }else p=[G.hubs[h].lat,G.hubs[h].lng];
-    out.push(p);
+      const ref=out.length?out[out.length-1].p:nx?[nx.lat,nx.lng]:null;
+      if(ref) c.forEach((y,j)=>{if(dm(y,ref)<dm(c[k],ref)) k=j;});
+    }
+    out.push(c&&c.length?{p:c[k],name:(nm&&nm[k])||G.hubs[h].name||''}:{p:[G.hubs[h].lat,G.hubs[h].lng],name:G.hubs[h].name||''});
   });
   return out;
 }
+const legPoints=(G,l)=>legStops(G,l).map(s=>s.p);
 function legGeometry(G,l){
   const pts=legPoints(G,l);
   let best=null;
@@ -2212,7 +2217,13 @@ function showPaths(it,still){
         L.polyline(ll,{renderer:svgR,color:surf,weight:10,opacity:.75,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
         const pl=L.polyline(ll,{renderer:svgR,color:col,weight:6,opacity:.95,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
         if(!still) drawIn(pl,i*140);
-        [l.from,l.to].forEach(h=>L.circleMarker([G.hubs[h].lat,G.hubs[h].lng],{renderer:svgR,radius:4.5,color:col,weight:2.5,fillColor:surf,fillOpacity:1,interactive:false}).addTo(routeLayer));
+        /* Hattın her durağı tıklanınca adını gösterir. Biniş ve iniş durakları biraz büyüktür. */
+        const sts=legStops(G,l),lab=l.mode==='bus'?'Otobüs '+l.label:l.label;
+        sts.forEach((s,k)=>{
+          const end=k===0||k===sts.length-1;
+          const mk=L.circleMarker(s.p,{renderer:svgR,radius:end?5:3.6,color:col,weight:end?2.5:2,fillColor:surf,fillOpacity:1,interactive:true,bubblingMouseEvents:false}).addTo(routeLayer);
+          mk.bindPopup('<div class="sp"><b>'+esc(s.name||'İsimsiz durak')+'</b><span>'+esc(lab)+' · '+(k===0?'biniş':k===sts.length-1?'iniş':'ara durak')+'</span></div>',{closeButton:false,autoPan:false,offset:[0,-3],className:'sp-pop',maxWidth:240});
+        });
         tag(midOf(ll),l.mode==='bus'?'Otobüs '+l.label:l.label,col);
       }
     });
