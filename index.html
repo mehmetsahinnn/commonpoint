@@ -777,6 +777,19 @@ ol,ul{padding:0;list-style:none}
 .status:empty{display:none}
 .status.err{color:var(--danger);font-weight:700}
 
+/* Buluşma yeri (isteğe bağlı): yazılırsa nokta aranmaz, herkes için o yere güzergah çıkar */
+.dest{display:flex;flex-direction:column;gap:10px}
+.dest .sechead{margin-bottom:0}
+.sechead .opt{color:var(--ink-3);font-size:13px;font-weight:600}
+.destcard{display:flex;align-items:center;gap:12px;padding:10px 6px 10px 12px;border:1.5px solid var(--ink);border-radius:14px;background:var(--surface)}
+.destcard .dflag{display:grid;place-items:center;flex:none;width:34px;height:34px;border-radius:9px;background:var(--ink);color:var(--surface)}
+.destcard .dflag svg{width:18px;height:18px}
+.destcard .dtx{flex:1;min-width:0}
+.destcard b{display:block;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.destcard .da{display:block;color:var(--ink-2);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dpin{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:var(--ink);color:var(--surface);border:3px solid var(--surface);box-shadow:0 0 0 2px var(--ink),var(--shadow-mark)}
+.dpin svg{width:20px;height:20px}
+
 /* Kişiler */
 .sechead{display:flex;align-items:center;gap:8px;margin-bottom:4px}
 .sechead h2{font:800 17px/1.2 var(--font-display)}
@@ -1001,6 +1014,26 @@ details[open]>summary::after{transform:rotate(-135deg)}
       </div>
     </section>
 
+    <section class="dest" id="destSec" aria-label="Buluşma yeri">
+      <div class="sechead"><h2>Buluşma yeri</h2><span class="opt">isteğe bağlı</span></div>
+      <p class="hint" id="destHint">Buluşacağınız yer belliyse yaz. Herkesin oraya güzergahı çıkar. Boş bırakırsan herkes için en adil durak bulunur.</p>
+      <form id="destForm" class="search" autocomplete="off">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17V3.5M5 4h9.5l-2 3.2 2 3.3H5"/></svg>
+        <label class="sr" for="dq">Buluşma yeri: mekan, adres, koordinat veya Haritalar bağlantısı</label>
+        <input id="dq" type="search" placeholder="Mekan, adres veya koordinat" enterkeyhint="search" autocapitalize="off">
+        <button class="btn" id="dBtn" type="submit">Ara</button>
+      </form>
+      <ul id="dhits" class="hits" hidden></ul>
+      <div class="chips" id="destChips">
+        <button type="button" class="chip" id="destPick" aria-pressed="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 14s5-4.4 5-8A5 5 0 0 0 3 6c0 3.6 5 8 5 8z"/><circle cx="8" cy="6" r="1.6"/></svg>Haritadan seç</button>
+      </div>
+      <div class="destcard" id="destCard" hidden>
+        <span class="dflag" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17V3.5M5 4h9.5l-2 3.2 2 3.3H5"/></svg></span>
+        <div class="dtx"><b id="destName"></b><span class="da" id="destAddr"></span></div>
+        <button class="x" id="destClear" type="button" aria-label="Buluşma yerini kaldır">×</button>
+      </div>
+    </section>
+
     <details class="opts" id="opts">
       <summary>Seçenekler</summary>
       <div class="optbody">
@@ -1037,6 +1070,7 @@ details[open]>summary::after{transform:rotate(-135deg)}
           <li>Her kişiden Dijkstra algoritması çalışır. Kişi önce yürüyerek ya da otobüsle bir durağa gider, sonra hatlar üzerinden her durağa en kısa süreyle ulaşır. Her biniş için bekleme süresi eklenir.</li>
           <li>Her durak bir aday koordinattır. Herkesin ulaşabildiği duraklar arasından, en uzun yolculuğu en kısa olan önerilir. Eşitlikte ortalaması düşük olan seçilir.</li>
         </ol>
+        <p>Buluşma yeri belliyse nokta aranmaz. Her kişi için o yere en kısa güzergah bulunur: yere en yakın duraklardan birine inip son bölümü yürür. Yere 1,5 km içindeki biri doğrudan yürüyebilir. Sonuçta, o yerin en adil duraklardan ne kadar farklı olduğu da gösterilir.</p>
         <p id="netNote"></p>
       </div>
     </details>
@@ -1354,6 +1388,36 @@ function solve({people,G,side}){
   const D=people.map(p=>dijkstra(G,p));
   return Object.assign({G,D},rankAll(G,D,side));
 }
+/* Buluşma yeri baştan belli (dest: {lat,lng,side}). Bu durumda nokta aranmaz, her kişi için o yere en kısa güzergah bulunur:
+   durağa erişim, hat yolculukları, son duraktan yere yürüyüş (yoksa otobüs tahmini). Yere yakın biri doğrudan yürüyebilir.
+   Son bacak {kind:'egress',mode,t,from:durak|-1,dist} olarak eklenir. */
+function makeEgress(G,dest){return makeAccess(G,dest);}
+function reachDest(G,res,person,dest,egr){
+  let best=null;
+  if(person.side===dest.side){
+    const d=hav(person,dest);
+    if(d<=WALK_REAL){const t=walkT(d);best={t,hub:-1,egress:{t,mode:'walk'},dist:d};}
+  }
+  for(let hi=0;hi<G.hubs.length;hi++){
+    const t0=res.dist[hi];
+    if(!isFinite(t0)) continue;
+    const e=egr(G.hubs[hi]);
+    if(!e) continue;
+    const t=t0+e.t;
+    if(!best||t<best.t) best={t,hub:hi,egress:e,dist:hav(G.hubs[hi],dest)};
+  }
+  return best;
+}
+function legsToDest(G,res,person,b){
+  const legs=b.hub<0?[]:legsFor(G,res,b.hub,person);
+  legs.push({kind:'egress',mode:b.egress.mode,t:b.egress.t,from:b.hub,dist:b.dist});
+  return legs;
+}
+/* Verilen kişi için tüm yollar hedefe: yere en iyi varış (t, bacaklar) ya da ulaşılamıyorsa null */
+function finishDest(G,res,person,dest,egr){
+  const b=reachDest(G,res,person,dest,egr);
+  return b?{t:b.t,legs:legsToDest(G,res,person,b)}:null;
+}
 /* SOLVER:END */
 
 /* ---------- yardımcılar ---------- */
@@ -1485,7 +1549,7 @@ async function reverse(lat,lng){
 }
 
 /* ---------- hat verisi (Overpass) ---------- */
-const state={people:[],side:'auto',mode:'max',base:'osm',lines:null,graph:null,solved:null,result:null,running:false,pick:false,sheetBefore:null,open:null};
+const state={people:[],side:'auto',mode:'max',base:'osm',lines:null,graph:null,solved:null,result:null,running:false,pick:false,sheetBefore:null,open:null,dest:null};
 let nextId=1,epoch=0,graphP=null;
 const TKEY='ortak-nokta-transit-v3'+(CITY.id==='istanbul'?'':'-'+CITY.id);
 const ROUTE_MODE={subway:'metro',light_rail:'metro',tram:'tram',funicular:'funicular',ferry:'ferry',train:'rail',bus:'brt'};
@@ -1689,13 +1753,14 @@ function useTiles(i){
   layer.addTo(map);
 }
 const canvasR=L.canvas({padding:.5}),svgR=L.svg({padding:.5});
-const netLayer=L.layerGroup().addTo(map),candLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),resultLayer=L.layerGroup().addTo(map),peopleLayer=L.layerGroup().addTo(map);
+const netLayer=L.layerGroup().addTo(map),candLayer=L.layerGroup().addTo(map),routeLayer=L.layerGroup().addTo(map),resultLayer=L.layerGroup().addTo(map),peopleLayer=L.layerGroup().addTo(map),destLayer=L.layerGroup().addTo(map);
 const pmarkers=new Map();
 const sideColor=s=>cssVar(s==='as'?'--as':'--eu');
 /* Yolculuğun adımları (yürüyüş hariç) sırayla farklı renk alır: 1. hat, 2. hat... Harita, çubuk ve adım listesi aynı sırayı kullanır. */
+const isWalkLeg=l=>(l.kind==='access'||l.kind==='egress')&&l.mode==='walk';
 function legPaint(legs){
   let k=0;
-  return legs.map(l=>(l.kind==='access'&&l.mode==='walk')?null:{n:k+1,v:'--l'+(1+(k++)%6)});
+  return legs.map(l=>isWalkLeg(l)?null:{n:k+1,v:'--l'+(1+(k++)%6)});
 }
 const paintStyle=pt=>pt?'--lc:var('+pt.v+');--onlc:var(--on-'+pt.v.slice(2)+')':'';
 const fmtDist=m=>m<1000?Math.max(10,Math.round(m/10)*10)+' m':(m/1000).toFixed(1).replace('.',',')+' km';
@@ -1708,20 +1773,20 @@ function creep(from,to,text){stopCreep();let p=from;progress(p,text);creepT=setI
 function stopCreep(){clearInterval(creepT);creepT=0;}
 function hideProgress(delay){clearTimeout(progTimer);progTimer=setTimeout(()=>{$('#prog').hidden=true;},delay||0);}
 function updateReady(){
-  const n=state.people.length,run=$('#run');
+  const n=state.people.length,run=$('#run'),need=state.dest?1:2;
   let t;
-  if(n===0) t='Başlamak için en az iki adres ekle.';
-  else if(n===1) t='1 kişi eklendi, 1 kişi daha ekle.';
+  if(n===0) t=need===1?'Başlamak için en az bir adres ekle.':'Başlamak için en az iki adres ekle.';
+  else if(n<need) t='1 kişi eklendi, 1 kişi daha ekle.';
   else t=state.result?n+' kişi için hesaplandı.':n+' kişi hazır.';
   $('#ready').textContent=t;
-  run.setAttribute('aria-disabled',String(n<2));
-  run.textContent=state.running?'Hesaplanıyor…':(state.result?'Yeniden hesapla':'Buluşma noktasını bul');
+  run.setAttribute('aria-disabled',String(n<need));
+  run.textContent=state.running?'Hesaplanıyor…':(state.result?'Yeniden hesapla':(state.dest?'Güzergahları bul':'Buluşma noktasını bul'));
 }
 function lock(b){$('#run').disabled=b;$$('input[name=side]').forEach(i=>{i.disabled=b;});updateReady();}
 
 const KEY='ortak-nokta-v2'+(CITY.id==='istanbul'?'':'-'+CITY.id);
 function save(){
-  try{localStorage.setItem(KEY,JSON.stringify({people:state.people.map(p=>({name:p.name,lat:p.lat,lng:p.lng,addr:p.addr})),side:state.side,base:state.base,bv:2,show:$('#showCands').checked,net:$('#showNet').checked}));}catch(e){}
+  try{localStorage.setItem(KEY,JSON.stringify({people:state.people.map(p=>({name:p.name,lat:p.lat,lng:p.lng,addr:p.addr})),side:state.side,base:state.base,bv:2,show:$('#showCands').checked,net:$('#showNet').checked,dest:state.dest?{lat:state.dest.lat,lng:state.dest.lng,name:state.dest.name,addr:state.dest.addr}:null}));}catch(e){}
 }
 function load(){
   try{
@@ -1736,6 +1801,8 @@ function load(){
     if(d.bv===2&&TILE_SRC.some(s=>s.id===d.base))state.base=d.base;
     if(d.show===false)$('#showCands').checked=false;
     if(d.net===false)$('#showNet').checked=false;
+    const x=d.dest;
+    if(x&&typeof x.lat==='number'&&typeof x.lng==='number'&&inCity(x.lat,x.lng)) state.dest={lat:x.lat,lng:x.lng,name:String(x.name||'Seçtiğin yer').slice(0,80),addr:String(x.addr||'')};
   }catch(e){}
 }
 
@@ -1747,7 +1814,7 @@ function patchRow(p){const el=$('.person[data-id="'+p.id+'"] .paddr');if(el)el.t
 function barHTML(legs,maxT){
   const total=legs.reduce((s,l)=>s+l.t,0),paint=legPaint(legs);
   const segs=legs.map((l,li)=>{
-    const kind=l.kind==='access'?l.mode:'ride';
+    const kind=(l.kind==='access'||l.kind==='egress')?l.mode:'ride';
     const label=kind==='walk'?'Yürüyüş':kind==='bus'?'Otobüs':(l.mode==='bus'?'Otobüs '+l.label:l.label);
     const wide=l.t/maxT>=.17;
     return '<span class="js '+kind+'" style="flex:'+l.t.toFixed(1)+' 1 0;'+paintStyle(paint[li])+'" title="'+esc(label+' '+fmtMin(l.t))+'">'+(wide?'<i>'+esc(label)+'</i>':'')+'</span>';
@@ -1786,6 +1853,10 @@ function stepsHTML(G,legs){
     if(l.kind==='access'){
       if(l.mode==='walk'){title='Yürüyüş';meta=fmtMin(l.t)+(l.dist?' · '+fmtDist(l.dist):'')+' · '+hn(l.to)+' durağına';}
       else{title='Otobüs (tahmini)';meta=fmtMin(l.t)+' · '+hn(l.to)+' durağına';rides++;}
+    }else if(l.kind==='egress'){
+      const from=l.from>=0?hn(l.from)+' durağından ':'';
+      if(l.mode==='walk'){title='Yürüyüş';meta=fmtMin(l.t)+(l.dist?' · '+fmtDist(l.dist):'')+' · '+from+'buluşma yerine';}
+      else{title='Otobüs (tahmini)';meta=fmtMin(l.t)+' · '+from+'buluşma yerine';if(rides>0) chip='<span class="tchip">aktarma</span>';rides++;}
     }else{
       const st=legStops(G,l),n=st.length-1;
       title=l.mode==='bus'?'Otobüs '+l.label:l.label;
@@ -1841,8 +1912,10 @@ function drawPeople(){
   });
 }
 function fit(){
-  if(!state.people.length) return;
-  map.fitBounds(L.latLngBounds(state.people.map(p=>[p.lat,p.lng])),Object.assign({maxZoom:14},padOpts()));
+  const pts=state.people.map(p=>[p.lat,p.lng]);
+  if(state.dest) pts.push([state.dest.lat,state.dest.lng]);
+  if(!pts.length) return;
+  map.fitBounds(L.latLngBounds(pts),Object.assign({maxZoom:14},padOpts()));
 }
 function refit(){
   const r=state.result;
@@ -1854,7 +1927,7 @@ function invalidate(){
   state.solved=null;state.result=null;state.open=null;
   candLayer.clearLayers();routeLayer.clearLayers();resultLayer.clearLayers();
   $('#resultSec').hidden=true;$('#resultSec').innerHTML='';
-  patchTrips();updateReady();
+  patchTrips();updateReady();drawDest();
 }
 async function reverseFill(p){
   p.pending=true;patchRow(p);
@@ -1899,7 +1972,7 @@ function drawNetwork(){
 }
 function drawCands(){
   candLayer.clearLayers();
-  if(!state.solved||!$('#showCands').checked) return;
+  if(!state.solved||state.solved.dest||!$('#showCands').checked) return;
   const rk=state.solved.ranks[state.mode],col=cssVar('--ink-2'),nn=rk.length;
   rk.forEach((c,idx)=>{
     const q=nn>1?idx/(nn-1):0;
@@ -1922,10 +1995,12 @@ function drawResultMarkers(){
   });
 }
 function summarize(G,legs){
-  const first=legs[0];
-  const hn=h=>G.hubs[h].name||'Durak';
-  const parts=[(first.mode==='walk'?'Yürüyüş ':'Otobüs ')+fmtMin(first.t),hn(first.to)];
-  legs.slice(1).forEach(l=>{parts.push(l.mode==='bus'?'Otobüs '+l.label:l.label);parts.push(hn(l.to));});
+  const hn=h=>G.hubs[h].name||'Durak',parts=[];
+  legs.forEach(l=>{
+    if(l.kind==='access'){parts.push((l.mode==='walk'?'Yürüyüş ':'Otobüs ')+fmtMin(l.t));parts.push(hn(l.to));}
+    else if(l.kind==='egress'){parts.push((l.mode==='walk'?'Yürüyüş ':'Otobüs ')+fmtMin(l.t));parts.push('Buluşma yeri');}
+    else{parts.push(l.mode==='bus'?'Otobüs '+l.label:l.label);parts.push(hn(l.to));}
+  });
   return parts.join(' → ');
 }
 /* ---------- alternatif rotalar ----------
@@ -1933,14 +2008,16 @@ function summarize(G,legs){
    yeniden aramakla, yalnızca otobüsle ve otobüssüz (raylı, vapur, yürüyüş) arayarak elde edilir. Süreler aynı modelle hesaplanır. */
 const rideKey=legs=>legs.filter(l=>l.kind==='ride').map(l=>l.ln).join(',');
 const rideName=legs=>{const r=legs.filter(l=>l.kind==='ride').map(l=>l.mode==='bus'?'Otobüs '+l.label:l.label);return r.length?r.join(' + '):'Yalnızca yürüyüş';};
-function altRoutes(G,person,hub,base){
+/* fin(res): bir Dijkstra sonucundan hedefe varış {t,legs} ya da null. Hedef bir durak ya da baştan belli bir yer olabilir. */
+function altRoutes(G,person,fin,base){
   const out=[],seen=new Set();
   const add=res=>{
-    if(!isFinite(res.dist[hub])) return null;
-    const legs=legsFor(G,res,hub,person),key=rideKey(legs);
+    const f=fin(res);
+    if(!f) return null;
+    const legs=f.legs,key=rideKey(legs);
     if(seen.has(key)) return null;
     seen.add(key);
-    const o={t:res.dist[hub],legs,summary:summarize(G,legs),name:rideName(legs),key};
+    const o={t:f.t,legs,summary:summarize(G,legs),name:rideName(legs),key};
     out.push(o);return o;
   };
   const first=add(base);
@@ -1970,7 +2047,11 @@ function toggleAlts(i){
   it.alt=it.alt||{};
   let a=it.alt[i];
   if(!a){
-    const list=altRoutes(s.G,state.people[i],it.hub,s.D[i]);
+    const person=state.people[i];
+    const fin=it.dest
+      ?(res=>finishDest(s.G,res,person,s.dest,s.egr))
+      :(res=>isFinite(res.dist[it.hub])?{t:res.dist[it.hub],legs:legsFor(s.G,res,it.hub,person)}:null);
+    const list=altRoutes(s.G,person,fin,s.D[i]);
     a={list,sel:0,open:true};
     it.alt[i]=a;
   }else a.open=!a.open;
@@ -2013,16 +2094,29 @@ function renderResult(){
   const coord=it.lat.toFixed(5)+', '+it.lng.toFixed(5);
   const addr=it.addr||(it.addrBusy?'Adres aranıyor…':'');
   const facts=['Ortalama '+fmtMin(mean)+'. En kısa yolculuk '+fmtMin(min)+', süre farkı '+fmtMin(max-min)+'.'];
+  const first=r.items[0],cmpMode=!!first.dest&&r.items.length>1;
+  if(it.dest&&state.people.length>1){
+    const fair=r.items[1];
+    if(fair){
+      const fmax=Math.max(...fair.times);
+      facts.push(Math.round(max/60)-Math.round(fmax/60)>=3
+        ?'En adil durak olan '+(fair.name||'Durak')+' (B) seçilseydi en uzun yolculuk '+fmtMin(fmax)+' olurdu, bu yerde '+fmtMin(max)+'.'
+        :'Bu yer en adil duraklar kadar dengeli.');
+    }
+  }else if(cmpMode&&!it.dest){
+    facts.push('Seçtiğin yerde (A) en uzun yolculuk '+fmtMin(Math.max(...first.times))+'.');
+  }
   if(CITY.sides){facts.push((side==='as'?'Anadolu yakasında':'Avrupa yakasında')+(cross?', '+cross+' kişi karşı yakadan geliyor.':'.'));}
   const alts=r.items.length>1?'<div class="altrow" role="group" aria-label="Diğer seçenekler">'+r.items.map((x,i)=>
     '<button type="button" data-i="'+i+'"'+(i===r.selected?' aria-current="true"':'')+' title="'+esc((x.name||'Durak')+', en uzun '+fmtMin(Math.max(...x.times)))+'"><span class="l">'+String.fromCharCode(65+i)+'</span><span class="n">'+esc(x.name||'Durak')+'</span></button>').join('')+'</div>':'';
   sec.hidden=false;
   sec.innerHTML='<article class="result">'+
-    '<h2 class="headline">'+(n>1?'Kimse '+fmtFrom(max)+' fazla yol gitmiyor':esc(it.name||'Durak'))+'</h2>'+
+    '<h2 class="headline">'+(n>1?'Kimse '+fmtFrom(max)+' fazla yol gitmiyor':it.dest?'Yolculuk '+fmtMin(max):esc(it.name||'Durak'))+'</h2>'+
     '<div class="station"><span class="mk" aria-hidden="true">'+letter+'</span><div><span class="sname">'+esc(it.name||'Durak')+'</span>'+(it.lines?'<span class="slines">'+esc(it.lines)+'</span>':'')+(addr?'<span class="saddr">'+esc(addr)+'</span>':'')+'</div></div>'+
     '<div class="coordrow"><input id="coord" readonly value="'+coord+'" aria-label="Buluşma koordinatı"><button class="btn sm" id="copyBtn" type="button">Kopyala</button><a class="btn sm plain" href="https://www.google.com/maps/search/?api=1&query='+it.lat.toFixed(6)+','+it.lng.toFixed(6)+'" target="_blank" rel="noopener">Haritalar\'da aç</a></div>'+
     '<p class="facts">'+esc(facts.join(' '))+'</p>'+
     alts+
+    (cmpMode?'<p class="fine">A seçtiğin yer. '+r.items.slice(1).map((x,k)=>String.fromCharCode(66+k)).join(' ve ')+(r.items.length>2?' herkes için en adil duraklar.':' herkes için en adil durak.')+'</p>':'')+
     '<p class="fine">Tahmini süreler. Otobüsler ortalama hızla hesaplanır, sefer saatleri dikkate alınmaz.</p>'+
     '</article>';
 }
@@ -2297,6 +2391,18 @@ function showPaths(it,still){
         L.polyline(ll,{renderer:svgR,color:surf,weight:7,opacity:.7*op,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
         L.polyline(ll,{renderer:svgR,color:col,weight:3.5,opacity:.95*op,dashArray:'1 7',lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
         if(l.mode==='bus'&&!dim) tag(midOf(ll),'Otobüs (tahmini)',col);
+      }else if(l.kind==='egress'){
+        /* Son bölüm: son duraktan (ya da evden) buluşma yerine. Baştaki erişim bacağı gibi noktalı çizilir. */
+        const prev=li>0?it.paths[i].legs[li-1]:null;
+        let a;
+        if(l.from>=0&&prev&&prev.kind==='ride'){const ps=legPoints(G,prev);a=ps[ps.length-1];}
+        else if(l.from>=0) a=[G.hubs[l.from].lat,G.hubs[l.from].lng];
+        else a=[p.lat,p.lng];
+        const ll=[a,[it.lat,it.lng]];
+        ll.forEach(q=>bd.extend(q));
+        L.polyline(ll,{renderer:svgR,color:surf,weight:7,opacity:.7*op,lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
+        L.polyline(ll,{renderer:svgR,color:col,weight:3.5,opacity:.95*op,dashArray:'1 7',lineCap:'round',lineJoin:'round',interactive:false}).addTo(routeLayer);
+        if(l.mode==='bus'&&!dim) tag(midOf(ll),'Otobüs (tahmini)',col);
       }else{
         const ll=legGeometry(G,l)||busLegRoad(G,l)||legPoints(G,l);
         ll.forEach(q=>bd.extend(q));
@@ -2323,7 +2429,7 @@ async function refineRoutes(it){
   const tok=++routeTok,ids=new Set(),roads=[];
   state.people.forEach((p,i)=>it.paths[i].legs.forEach(l=>{
     if(l.kind==='ride'){(G.metas[l.ln].ids||[]).forEach(id=>{if(!haveGeom(id))ids.add(id);});}
-    else if(l.mode==='bus'){
+    else if(l.kind==='access'&&l.mode==='bus'){
       const h=G.hubs[l.to];
       if(p.side===h.side){const a=[p.lat,p.lng],b=[h.lat,h.lng];if(!roadCache.has(roadKey(a,b)))roads.push([a,b]);}
     }
@@ -2360,7 +2466,7 @@ function selectItem(i){
   const it=r.items[i];
   if(!it.paths){
     it.paths=state.people.map((p,idx)=>{
-      const legs=legsFor(s.G,s.D[idx],it.hub,p);
+      const legs=it.dest?legsToDest(s.G,s.D[idx],p,s.fin[idx]):legsFor(s.G,s.D[idx],it.hub,p);
       return {legs,summary:summarize(s.G,legs)};
     });
   }
@@ -2371,11 +2477,19 @@ function selectItem(i){
 }
 function present(){
   const s=state.solved,mode=state.mode;
-  const rk=s.ranks[mode];
-  if(!rk.length) throw new Error('no-candidates');
-  const top=pickTop(rk,5,600);
-  state.result={items:top.map(c=>({hub:c.hub,name:c.name,lat:c.lat,lng:c.lng,times:c.times,lines:c.lines})),selected:0,mode};
-  drawCands();
+  const rk=s.ranks[mode],mk=c=>({hub:c.hub,name:c.name,lat:c.lat,lng:c.lng,times:c.times,lines:c.lines});
+  let items;
+  if(s.dest){
+    /* A: seçilen yer. B ve C: karşılaştırma için herkes açısından en adil duraklar (yere çok yakın olanlar elenir). Tek kişide adillik anlamsızdır. */
+    const d=state.dest;
+    items=[{dest:true,hub:-1,name:d.name||'Buluşma yeri',addr:d.addr||'',lat:d.lat,lng:d.lng,times:s.fin.map(b=>b.t),lines:''}];
+    if(state.people.length>1) pickTop(rk,4,600).filter(c=>hav(c,d)>=400).slice(0,2).forEach(c=>items.push(mk(c)));
+  }else{
+    if(!rk.length) throw new Error('no-candidates');
+    items=pickTop(rk,5,600).map(mk);
+  }
+  state.result={items,selected:0,mode};
+  drawCands();drawDest();
   selectItem(0);
   updateReady();
 }
@@ -2387,7 +2501,8 @@ function revealResult(){
 
 async function run(){
   if(state.running) return;
-  if(state.people.length<2){setStatus('En az iki adres ekle.','err');$('#q').focus();return;}
+  const need=state.dest?1:2;
+  if(state.people.length<need){setStatus(need===1?'En az bir adres ekle.':'En az iki adres ekle.','err');$('#q').focus();return;}
   state.running=true;lock(true);invalidate();setStatus('');
   const ep=epoch;
   if(mobileMQ.matches&&sheet==='peek'){setSheet('half');}
@@ -2399,10 +2514,16 @@ async function run(){
     if(ep!==epoch) return;
     progress(.8,'Her kişiden en kısa yollar aranıyor…');
     await sleep(30);
-    const s=solve({people:state.people.map(p=>({id:p.id,lat:p.lat,lng:p.lng,side:p.side})),G,side:state.side});
-    if(!s.cands.length) throw new Error('no-candidates');
+    const ppl=state.people.map(p=>({id:p.id,lat:p.lat,lng:p.lng,side:p.side}));
+    const s=solve({people:ppl,G,side:state.side});
+    if(state.dest){
+      const dest={lat:state.dest.lat,lng:state.dest.lng,side:sideOf(state.dest.lat,state.dest.lng)};
+      const egr=makeEgress(G,dest),fin=s.D.map((r,i)=>reachDest(G,r,ppl[i],dest,egr));
+      if(fin.some(b=>!b)) throw new Error('no-route');
+      Object.assign(s,{dest,egr,fin});
+    }else if(!s.cands.length) throw new Error('no-candidates');
     state.solved=s;
-    progress(1,'Buluşma noktası bulundu.');
+    progress(1,state.dest?'Güzergahlar bulundu.':'Buluşma noktası bulundu.');
     present();
     revealResult();
   }catch(e){
@@ -2414,18 +2535,19 @@ async function run(){
   }
 }
 function errText(e){
+  if(e&&e.message==='no-route') return 'Bu yere en az bir kişi için güzergah bulunamadı. Yeri bir durağa daha yakın seçmeyi dene.';
   if(e&&e.message==='no-candidates') return 'Tüm kişilerin ulaşabildiği bir durak bulunamadı. Seçeneklerden yakayı "Otomatik" yapıp yeniden dene.';
   return 'Hat verisi indirilemedi. Bağlantını kontrol edip "Buluşma noktasını bul" düğmesine yeniden bas.';
 }
 
 /* ---------- adres kutusu ve olaylar ---------- */
-function hideHits(){$('#hits').hidden=true;$('#hits').innerHTML='';}
-function showHits(hits){
-  const ul=$('#hits');ul.innerHTML='';
+function hideHits(){['#hits','#dhits'].forEach(id=>{const u=$(id);u.hidden=true;u.innerHTML='';});}
+function showHits(hits,list,onPick){
+  const ul=list||$('#hits');ul.innerHTML='';
   hits.forEach(h=>{
     const li=document.createElement('li'),b=document.createElement('button');
     b.type='button';b.innerHTML='<b>'+esc(h.title)+'</b><span>'+esc(h.sub)+'</span>';
-    b.addEventListener('click',()=>pickHit(h));
+    b.addEventListener('click',()=>(onPick||pickHit)(h));
     li.appendChild(b);ul.appendChild(li);
   });
   ul.hidden=false;
@@ -2528,20 +2650,92 @@ $('#resultSec').addEventListener('click',e=>{
   }
 });
 
+/* ---------- buluşma yeri (isteğe bağlı) ----------
+   Yazılırsa nokta aranmaz, herkes için o yere güzergah çıkar. A: seçilen yer, B ve C: karşılaştırma için en adil duraklar. */
+const FLAG_SVG='<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17V3.5M5 4h9.5l-2 3.2 2 3.3H5"/></svg>';
+function drawDest(){
+  destLayer.clearLayers();
+  const d=state.dest,r=state.result;
+  if(!d||(r&&r.items[0]&&r.items[0].dest)) return;
+  const icon=L.divIcon({className:'',html:'<div class="dpin">'+FLAG_SVG+'</div>',iconSize:[38,38],iconAnchor:[19,19]});
+  const m=L.marker([d.lat,d.lng],{icon,draggable:true,keyboard:false,zIndexOffset:900}).addTo(destLayer);
+  m.bindTooltip(esc(d.name||'Buluşma yeri'),{direction:'top',offset:[0,-18]});
+  m.on('dragend',()=>{const ll=m.getLatLng();setDest({lat:ll.lat,lng:ll.lng,name:'Seçtiğin yer',addr:''});});
+}
+function renderDest(){
+  const d=state.dest;
+  $('#destCard').hidden=!d;$('#destForm').hidden=!!d;$('#destChips').hidden=!!d;
+  $('#destHint').textContent=d?'Herkes bu yere gidecek şekilde güzergah çıkarılır. En adil duraklarla karşılaştırması da gösterilir.':'Buluşacağınız yer belliyse yaz. Herkesin oraya güzergahı çıkar. Boş bırakırsan herkes için en adil durak bulunur.';
+  if(d){
+    $('#destName').textContent=d.name||'Buluşma yeri';
+    $('#destAddr').textContent=d.addr||(d.pending?'Adres aranıyor…':d.lat.toFixed(5)+', '+d.lng.toFixed(5));
+  }
+}
+async function destReverse(){
+  const d=state.dest;
+  if(!d) return;
+  d.pending=true;renderDest();
+  try{const r=await reverse(d.lat,d.lng);if(state.dest===d) d.addr=r.sub||'';}catch(e){}
+  d.pending=false;
+  if(state.dest!==d) return;
+  renderDest();save();
+  const r=state.result,it=r&&r.items[0];
+  if(it&&it.dest&&!it.addr){it.addr=d.addr;if(r.selected===0) renderResult();}
+}
+function setDest({lat,lng,name,addr}){
+  if(!inCity(lat,lng)){setStatus('Bu sayfa şu an yalnızca '+CITY.name+' içindeki noktalarla çalışır.','err');return false;}
+  state.dest={lat,lng,name:name&&name!=='Koordinat'?name:'Seçtiğin yer',addr:addr||''};
+  invalidate();renderDest();drawDest();save();setStatus('');
+  if(!state.dest.addr) destReverse();
+  return true;
+}
+function clearDest(){
+  state.dest=null;
+  invalidate();renderDest();drawDest();save();setStatus('');
+  fit();
+}
+function pickDestHit(h){
+  if(setDest({lat:h.lat,lng:h.lng,name:h.title,addr:h.title==='Koordinat'?'':h.sub})){hideHits();$('#dq').value='';fit();}
+}
+$('#destForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const q=$('#dq').value.trim();
+  if(!q) return;
+  $('#dBtn').disabled=true;setStatus('Yer aranıyor…');
+  try{
+    const hits=await geocode(q);
+    if(!hits.length){setStatus('Yer bulunamadı. Mahalle ve ilçe adını da ekleyip yeniden dene.','err');hideHits();}
+    else if(hits.length===1){pickDestHit(hits[0]);}
+    else{showHits(hits,$('#dhits'),pickDestHit);setStatus('');}
+  }catch(err){
+    setStatus(searchError(err),'err');
+  }finally{$('#dBtn').disabled=false;}
+});
+$('#dq').addEventListener('input',()=>{if(!$('#dq').value) hideHits();});
+$('#destClear').addEventListener('click',clearDest);
+
 /* Haritadan seçme: açıkça başlatılır, Bitti ya da Esc ile kapanır. Böylece harita kaydırırken yanlışlıkla nokta eklenmez. */
-function setPick(on){
-  state.pick=on;
-  $('#pickBtn').setAttribute('aria-pressed',String(on));
+function setPick(on,kind){
+  kind=kind||'people';
+  state.pick=on?kind:false;
+  $('#pickBtn').setAttribute('aria-pressed',String(!!on&&kind==='people'));
+  $('#destPick').setAttribute('aria-pressed',String(!!on&&kind==='dest'));
+  $('#pickbar span').textContent=kind==='dest'?'Haritada buluşma yerine dokun':'Haritada bir noktaya dokun';
   $('#pickbar').hidden=!on;
   map.getContainer().classList.toggle('map-add',on);
   if(on&&mobileMQ.matches){state.sheetBefore=sheet;setSheet('peek');}
   else if(!on&&state.sheetBefore){setSheet(state.sheetBefore);state.sheetBefore=null;}
 }
-$('#pickBtn').addEventListener('click',()=>setPick(!state.pick));
+$('#pickBtn').addEventListener('click',()=>setPick(state.pick!=='people','people'));
+$('#destPick').addEventListener('click',()=>setPick(state.pick!=='dest','dest'));
 $('#pickDone').addEventListener('click',()=>{setPick(false);refit();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(state.pick)setPick(false);hideHits();}});
 map.on('click',e=>{
   if(!state.pick) return;
+  if(state.pick==='dest'){
+    if(setDest({lat:e.latlng.lat,lng:e.latlng.lng,name:'Seçtiğin yer',addr:''})) setPick(false);
+    return;
+  }
   addPerson({lat:e.latlng.lat,lng:e.latlng.lng,addr:''});
 });
 
@@ -2596,7 +2790,7 @@ $('#legend').hidden=!CITY.sides;
 $('#lgAs').hidden=!CITY.sides;
 $$('input[name=side]').forEach(r=>{r.checked=r.value===state.side;});
 setSheet('half');
-renderPeople();drawPeople();
+renderPeople();drawPeople();renderDest();drawDest();
 offsetView();
 fit();
 useTiles(Math.max(0,TILE_SRC.findIndex(s=>s.id===state.base)));armTip();
